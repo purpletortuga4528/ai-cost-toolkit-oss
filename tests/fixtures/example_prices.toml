@@ -1,0 +1,50 @@
+# Synthetic fixture for tests. The provider, models, rates, and URLs are made up and are
+# not real prices. Real prices live in data/prices.toml.
+schema_version = 1
+
+# Two bands, boundary "at or below", whole request priced at the band it falls in.
+[[price]]
+provider = "example-provider"
+model = "example-model-a"
+effective_from = 2026-01-01
+threshold_tokens = 200000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 1.25
+output_per_mtok = 10
+input_per_mtok_above = 2.50
+output_per_mtok_above = 15
+source_url = "https://example.com/pricing"
+as_of = 2026-10-31
+tier = "A"
+
+# Same model, scheduled change: a second row with a later effective date. This one uses
+# the "marginal" rule (only tokens beyond the threshold are priced at the upper rate).
+[[price]]
+provider = "example-provider"
+model = "example-model-a"
+effective_from = 2027-01-01
+threshold_tokens = 200000
+boundary = "at_or_below"
+applies_to = "marginal"
+input_per_mtok = 1.50
+output_per_mtok = 12
+input_per_mtok_above = 3
+output_per_mtok_above = 18
+source_url = "https://example.com/pricing"
+as_of = 2026-10-31
+tier = "B"
+shelf_life_days = 14
+
+# Single band: no threshold, so no boundary rule, applies_to, or above-threshold rates.
+# Tier C warns.
+[[price]]
+provider = "example-provider"
+model = "example-model-b"
+effective_from = 2026-01-01
+input_per_mtok = 0.1
+output_per_mtok = 0.4
+source_url = "https://example.com/pricing-b"
+as_of = 2026-10-01
+tier = "C"
+notes = "Synthetic row."
