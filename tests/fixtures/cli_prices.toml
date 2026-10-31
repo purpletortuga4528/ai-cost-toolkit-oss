@@ -1,0 +1,63 @@
+# Synthetic price table for the command-line tests. Providers, models, rates, and URLs are
+# made up; they are not real prices. Rates are chosen so the expected values can be worked
+# out by hand (see tests/test_cli.py).
+schema_version = 1
+
+# model-a: two bands, boundary "at or below", whole request. A scheduled change on 2027-01-01
+# raises every rate by 50 percent.
+[[price]]
+provider = "example-provider"
+model = "model-a"
+effective_from = 2026-01-01
+threshold_tokens = 200000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 1
+output_per_mtok = 2
+input_per_mtok_above = 3
+output_per_mtok_above = 6
+source_url = "https://example.com/pricing-a"
+as_of = 2026-10-31
+tier = "A"
+
+[[price]]
+provider = "example-provider"
+model = "model-a"
+effective_from = 2027-01-01
+threshold_tokens = 200000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 1.5
+output_per_mtok = 3
+input_per_mtok_above = 4.5
+output_per_mtok_above = 9
+source_url = "https://example.com/pricing-a"
+as_of = 2026-10-31
+tier = "A"
+
+# model-b: single band, tier C, and checked long ago (stale on 2026-10-31 with a 30-day shelf life).
+[[price]]
+provider = "example-provider"
+model = "model-b"
+effective_from = 2026-01-01
+input_per_mtok = 0.5
+output_per_mtok = 1.5
+source_url = "https://example.com/pricing-b"
+as_of = 2026-08-01
+tier = "C"
+
+# model-c: boundary "under", marginal.
+[[price]]
+provider = "other-provider"
+model = "model-c"
+effective_from = 2026-01-01
+threshold_tokens = 100000
+boundary = "under"
+applies_to = "marginal"
+input_per_mtok = 2
+output_per_mtok = 8
+input_per_mtok_above = 4
+output_per_mtok_above = 16
+source_url = "https://example.com/pricing-c"
+as_of = 2026-10-31
+tier = "B"

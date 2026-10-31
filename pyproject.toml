@@ -10,3 +10,6 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE", "LICENSE-CONTENT"]
 dependencies = []
+
+[project.scripts]
+aicost = "aicost.cli:main"

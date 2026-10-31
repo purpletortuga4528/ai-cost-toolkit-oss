@@ -1,0 +1,7 @@
+{"provider": "example-provider", "model": "model-a", "input_tokens": 100000, "output_tokens": 10000, "request_id": "r1"}
+{"provider": "example-provider", "model": "model-a", "input_tokens": 200000, "output_tokens": 0, "request_id": "r2"}
+{"provider": "example-provider", "model": "model-a", "input_tokens": 300000, "output_tokens": 10000, "request_id": "r3"}
+{"provider": "example-provider", "model": "model-b", "input_tokens": 1000000, "output_tokens": 100000, "request_id": "r4"}
+{"provider": "other-provider", "model": "model-c", "input_tokens": 100000, "output_tokens": 5000, "request_id": "r5"}
+{"provider": "other-provider", "model": "model-c", "input_tokens": 150000, "output_tokens": 5000, "request_id": "r6"}
+{"model": "mystery-model", "input_tokens": 10, "output_tokens": 10, "request_id": "r7"}

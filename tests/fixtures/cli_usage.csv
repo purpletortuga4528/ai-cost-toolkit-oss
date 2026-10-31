@@ -1,0 +1,8 @@
+provider,model,input_tokens,output_tokens,request_id
+example-provider,model-a,100000,10000,r1
+example-provider,model-a,200000,0,r2
+example-provider,model-a,300000,10000,r3
+example-provider,model-b,1000000,100000,r4
+other-provider,model-c,100000,5000,r5
+other-provider,model-c,150000,5000,r6
+,mystery-model,10,10,r7
