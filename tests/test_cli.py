@@ -39,9 +39,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 PRICES = FIXTURES / "cli_prices.toml"
 CSV = FIXTURES / "cli_usage.csv"
 JSONL = FIXTURES / "cli_usage.jsonl"
-SEED_PRICES = Path(__file__).resolve().parents[1] / "data" / "prices.toml"
+SEED_PRICES = Path(__file__).resolve().parents[1] / "src" / "aicost" / "data" / "prices.toml"
 SEED_USAGE = FIXTURES / "seed_usage.csv"
 TODAY = "2026-10-31"
+SEED_TODAY = "2026-11-01"  # the seed table holds rows read on 2026-11-01
 
 
 def run(*argv):
@@ -123,7 +124,10 @@ class Report(unittest.TestCase):
         self.assertIn("  gap:                   $0.8200", lines)
 
     def test_unpriced_request_is_listed_not_dropped(self):
-        self.assertIn("  line 8: mystery-model: no price row for this model", block(self.out, "UNPRICED"))
+        self.assertIn(
+            "  mystery-model: 1 request, no price row for this model (first at line 8)",
+            block(self.out, "UNPRICED"),
+        )
 
     def test_stale_and_tier_c_warnings_surface(self):
         warnings = block(self.out, "WARNINGS")
@@ -152,11 +156,15 @@ class Report(unittest.TestCase):
     def test_jsonl_gives_the_same_report_as_csv(self):
         _, out_jsonl, _ = run("report", JSONL, "--prices", PRICES, "--today", TODAY)
         # Line numbers differ by one: the CSV has a header row, the JSON Lines file has none.
-        self.assertIn("  line 8: mystery-model: no price row for this model", self.out.splitlines())
-        self.assertIn("  line 7: mystery-model: no price row for this model", out_jsonl.splitlines())
+        self.assertIn(
+            "  mystery-model: 1 request, no price row for this model (first at line 8)", self.out.splitlines()
+        )
+        self.assertIn(
+            "  mystery-model: 1 request, no price row for this model (first at line 7)", out_jsonl.splitlines()
+        )
 
         def without_file_and_lines(text):
-            return [line for line in text.splitlines()[1:] if not line.startswith("  line ")]
+            return [line for line in text.splitlines()[1:] if "(first at line " not in line]
 
         self.assertEqual(without_file_and_lines(self.out), without_file_and_lines(out_jsonl))
 
@@ -264,8 +272,9 @@ class Reprice(unittest.TestCase):
         )
 
     def test_unpriced_request_listed_for_both_dates(self):
-        self.assertIn("  line 8: mystery-model: no price row for this model", block(self.out, "UNPRICED ON 2026-10-31"))
-        self.assertIn("  line 8: mystery-model: no price row for this model", block(self.out, "UNPRICED ON 2027-01-01"))
+        line = "  mystery-model: 1 request, no price row for this model (first at line 8)"
+        self.assertIn(line, block(self.out, "UNPRICED ON 2026-10-31"))
+        self.assertIn(line, block(self.out, "UNPRICED ON 2027-01-01"))
         self.assertNotIn("priced on only one", self.out)
 
     def test_warnings_surface(self):
@@ -289,7 +298,7 @@ class Reprice(unittest.TestCase):
         self.assertIn("  p / m: not priced now; no comparison", out)
         self.assertIn("WARNING: some requests are priced on only one of the two dates", out)
         self.assertIn(
-            "  line 2: m: every price row for this model takes effect after the pricing date",
+            "  m: 1 request, every price row for this model takes effect after the pricing date (first at line 2)",
             block(out, "UNPRICED ON 2026-10-31"),
         )
         # 1,000,000 x 1 + 1,000,000 x 2 = $3.00 on the later date.
@@ -342,12 +351,94 @@ class BadInput(unittest.TestCase):
         self.assertIn("is in the future", err)
 
 
+class UnpricedGrouping(unittest.TestCase):
+    """Unpriced requests are listed once per provider, model, and reason, with a count.
+
+    Each test builds a small CSV (header on line 1) and counts the requests by hand in a comment.
+    """
+
+    PRICES = (
+        "schema_version = 1\n"
+        "[[price]]\n"
+        'provider = "p1"\nmodel = "dup"\neffective_from = 2026-10-31\n'
+        "input_per_mtok = 1\noutput_per_mtok = 2\n"
+        'source_url = "https://example.com/p"\nas_of = 2026-10-31\ntier = "A"\n'
+        "[[price]]\n"
+        'provider = "p2"\nmodel = "dup"\neffective_from = 2026-10-31\n'
+        "input_per_mtok = 1\noutput_per_mtok = 2\n"
+        'source_url = "https://example.com/p"\nas_of = 2026-10-31\ntier = "A"\n'
+    )
+
+    def run_usage(self, usage_text, command="report", *extra):
+        with tempfile.TemporaryDirectory() as directory:
+            prices = write(directory, "p.toml", self.PRICES)
+            usage = write(directory, "u.csv", usage_text)
+            return run(command, usage, "--prices", prices, "--today", TODAY, *extra)
+
+    def test_counts_order_and_first_line(self):
+        # Lines 2, 4, 5 are "ghost" (3 requests); line 3 is "spook" (1); the order is by
+        # count, highest first.
+        usage = "model,input_tokens,output_tokens\nghost,1,1\nspook,1,1\nghost,1,1\nghost,1,1\n"
+        code, out, _ = self.run_usage(usage)
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            block(out, "UNPRICED"),
+            [
+                "UNPRICED REQUESTS (not in any total)",
+                "  ghost: 3 requests, no price row for this model (first at line 2)",
+                "  spook: 1 request, no price row for this model (first at line 3)",
+            ],
+        )
+        self.assertIn("Requests: 4 read, 0 priced, 4 unpriced", out)
+
+    def test_same_model_under_two_providers_is_two_lines(self):
+        usage = "provider,model,input_tokens,output_tokens\na,ghost,1,1\nb,ghost,1,1\na,ghost,1,1\n"
+        _, out, _ = self.run_usage(usage)
+        self.assertEqual(
+            block(out, "UNPRICED")[1:],
+            [
+                "  a / ghost: 2 requests, no price row for this model (first at line 2)",
+                "  b / ghost: 1 request, no price row for this model (first at line 3)",
+            ],
+        )
+
+    def test_a_different_reason_is_a_separate_line(self):
+        # "dup" is under p1 and p2, so a record without a provider is ambiguous, while
+        # "ghost" has no price row at all.
+        usage = "model,input_tokens,output_tokens\ndup,1,1\nghost,1,1\ndup,1,1\n"
+        _, out, _ = self.run_usage(usage)
+        lines = block(out, "UNPRICED")[1:]
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("  dup: 2 requests, model appears under more than one provider"))
+        self.assertTrue(lines[0].endswith("(first at line 2)"))
+        self.assertEqual(lines[1], "  ghost: 1 request, no price row for this model (first at line 3)")
+
+    def test_a_thousand_requests_print_one_line(self):
+        usage = "model,input_tokens,output_tokens\n" + "ghost,1,1\n" * 1000
+        _, out, _ = self.run_usage(usage)
+        self.assertEqual(
+            block(out, "UNPRICED"),
+            [
+                "UNPRICED REQUESTS (not in any total)",
+                "  ghost: 1,000 requests, no price row for this model (first at line 2)",
+            ],
+        )
+        self.assertNotIn("line 3", out)
+
+    def test_reprice_groups_for_both_dates(self):
+        usage = "model,input_tokens,output_tokens\nghost,1,1\nghost,1,1\n"
+        _, out, _ = self.run_usage(usage, "reprice", "--on", "2027-01-01")
+        line = "  ghost: 2 requests, no price row for this model (first at line 2)"
+        self.assertIn(line, block(out, "UNPRICED ON 2026-10-31"))
+        self.assertIn(line, block(out, "UNPRICED ON 2027-01-01"))
+
+
 class SeedPrices(unittest.TestCase):
-    """The shipped data/prices.toml works through the commands. No dollar values are asserted,
+    """The bundled src/aicost/data/prices.toml works through the commands. No dollar values are asserted,
     because they change whenever the seed prices are re-checked."""
 
     def test_report_runs_on_the_seed_prices(self):
-        code, out, err = run("report", SEED_USAGE, "--prices", SEED_PRICES, "--today", TODAY)
+        code, out, err = run("report", SEED_USAGE, "--prices", SEED_PRICES, "--today", SEED_TODAY)
         self.assertEqual((code, err), (0, ""))
         self.assertIn("Requests: 3 read, 3 priced, 0 unpriced", out)
         self.assertIn("anthropic / claude-haiku-5-5", out)
@@ -355,16 +446,43 @@ class SeedPrices(unittest.TestCase):
         self.assertNotIn("[stale]", out)
 
     def test_schedule_finds_the_january_1_2027_change(self):
-        code, out, _ = run("schedule", SEED_USAGE, "--prices", SEED_PRICES, "--today", TODAY)
+        code, out, _ = run("schedule", SEED_USAGE, "--prices", SEED_PRICES, "--today", SEED_TODAY)
         self.assertEqual(code, 0)
-        self.assertIn("2027-01-01  google / gemini-3.8-flash  (in 62 days)", out)
+        self.assertIn("2027-01-01  google / gemini-3.8-flash  (in 61 days)", out)
 
     def test_reprice_runs_on_the_seed_prices(self):
         code, out, err = run(
-            "reprice", SEED_USAGE, "--prices", SEED_PRICES, "--today", TODAY, "--on", "2027-01-01"
+            "reprice", SEED_USAGE, "--prices", SEED_PRICES, "--today", SEED_TODAY, "--on", "2027-01-01"
         )
         self.assertEqual((code, err), (0, ""))
         self.assertIn("google / gemini-3.8-flash: now", out)
+
+
+class DefaultPrices(unittest.TestCase):
+    """Without --prices the seed table bundled in the package is used, from any folder."""
+
+    def test_no_prices_flag_uses_the_bundled_table(self):
+        code, out, err = run("report", SEED_USAGE, "--today", SEED_TODAY)
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("Prices: bundled seed prices (aicost/data/prices.toml)", out)
+        self.assertIn("Requests: 3 read, 3 priced, 0 unpriced", out)
+
+    def test_bundled_table_matches_the_explicit_file(self):
+        _, bundled, _ = run("report", SEED_USAGE, "--today", SEED_TODAY)
+        _, explicit, _ = run("report", SEED_USAGE, "--prices", SEED_PRICES, "--today", SEED_TODAY)
+        self.assertEqual(bundled.splitlines()[2:], explicit.splitlines()[2:])
+
+    def test_works_from_an_unrelated_folder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            done = subprocess.run(
+                [sys.executable, "-m", "aicost.cli", "schedule", str(SEED_USAGE), "--today", SEED_TODAY],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                cwd=directory,
+            )
+        self.assertEqual((done.returncode, done.stderr), (0, ""))
+        self.assertIn("2027-01-01  google / gemini-3.8-flash", done.stdout)
 
 
 class Subprocess(unittest.TestCase):

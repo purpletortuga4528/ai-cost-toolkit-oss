@@ -1,0 +1,364 @@
+# Seed prices for aicost. Content license: CC BY 4.0 (see LICENSE-CONTENT).
+#
+# Every row was read from the provider's own pricing page on its as_of date (2026-10-31,
+# and 2026-11-01 for the four Claude Opus and Sonnet rows).
+# Rates are US dollars per million tokens, Standard (not batch or flex) paid-tier text
+# prices. Cache, batch, tool, and regional-processing prices are not in this table.
+#
+# Banded rows and where each rule comes from (checked 2026-10-31):
+# - Anthropic: the pricing page states the 100,000-token rule.
+# - OpenAI: the pricing page toggle reads "Short: <=272K input tokens" and "Long: >272K input
+#   tokens"; each model's own page says prompts over 272K are priced at 2x input and 1.5x
+#   output "for the full request" (GPT-5.5 and GPT-5.4 say "full session"). No page defines
+#   "K"; 272K is read here as 272,000. Upper rates are 2x and 1.5x the short rates, computed
+#   from that wording. The pricing page labels some short rows "(<272K context length)",
+#   which disagrees with its "<=272K" toggle; the toggle and the model pages agree and are
+#   followed.
+# - Gemini 3.1 Pro Preview and Gemini 2.5 Pro: the Gemini API pricing page shows a 200k band
+#   ("prompts <= 200k tokens") but is silent on whole request versus marginal, as are its
+#   long-context, billing, tokens, caching, and model pages. Google's separate Vertex AI
+#   pricing page (https://cloud.google.com/vertex-ai/generative-ai/pricing) says "If a query
+#   input context is longer than 200K tokens, all tokens (input and output) are charged at
+#   long context rates", with the same Pro rates. The owner decided on 2026-10-31 to use
+#   that wording for these two rows. This is the one place where the rule comes from a
+#   different Google product than the rates. "200k" is read as 200,000. These two rows are
+#   tier B for that reason: the rates are from the Gemini API page, but the whole-request
+#   rule is from the Vertex AI page, a different Google product.
+# - "K" is read as 1,000 throughout (272K is 272,000 and 200k is 200,000).
+#
+# effective_from note: the pages state when a current price ends or changes, not when it
+# began, so each current row uses its check date as effective_from.
+schema_version = 1
+
+# ---- Google: https://ai.google.dev/gemini-api/docs/pricing (page: "Last updated 2026-10-30 UTC")
+
+[[price]]
+provider = "google"
+model = "gemini-3.8-flash"
+effective_from = 2026-10-31
+input_per_mtok = 0.75
+output_per_mtok = 3.75
+source_url = "https://ai.google.dev/gemini-api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Page: input $0.75 and output $3.75 through December 31, 2026. No start date given; effective_from is the check date. Single band."
+
+[[price]]
+provider = "google"
+model = "gemini-3.8-flash"
+effective_from = 2027-01-01
+input_per_mtok = 1.50
+output_per_mtok = 7.50
+source_url = "https://ai.google.dev/gemini-api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Page: input $1.50 and output $7.50 starting January 1, 2027. Single band."
+
+[[price]]
+provider = "google"
+model = "gemini-3.6-flash"
+effective_from = 2026-10-31
+input_per_mtok = 0.75
+output_per_mtok = 3.75
+source_url = "https://ai.google.dev/gemini-api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Page: input $0.75 and output $3.75 through December 31, 2026. No start date given; effective_from is the check date. Single band."
+
+[[price]]
+provider = "google"
+model = "gemini-3.6-flash"
+effective_from = 2027-01-01
+input_per_mtok = 1.50
+output_per_mtok = 7.50
+source_url = "https://ai.google.dev/gemini-api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Page: input $1.50 and output $7.50 starting January 1, 2027. Single band."
+
+[[price]]
+provider = "google"
+model = "gemini-4-argon"
+effective_from = 2026-10-31
+input_per_mtok = 2.00
+output_per_mtok = 10.00
+source_url = "https://ai.google.dev/gemini-api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Page: input $2.00 and output $10.00 through November 30, 2026. No start date given; effective_from is the check date. Single band."
+
+[[price]]
+provider = "google"
+model = "gemini-4-argon"
+effective_from = 2026-12-01
+input_per_mtok = 4.00
+output_per_mtok = 20.00
+source_url = "https://ai.google.dev/gemini-api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Page: input $4.00 and output $20.00 starting December 1, 2026. Single band."
+
+[[price]]
+provider = "google"
+model = "gemini-3.1-pro-preview"
+effective_from = 2026-10-31
+threshold_tokens = 200000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 2.00
+output_per_mtok = 12.00
+input_per_mtok_above = 4.00
+output_per_mtok_above = 18.00
+source_url = "https://ai.google.dev/gemini-api/docs/pricing"
+as_of = 2026-10-31
+tier = "B"
+shelf_life_days = 30
+notes = "Tier B: the rates are from the Gemini API page, the whole-request rule from another Google page. Rates from the Gemini API page: input $2.00 and output $12.00 for 'prompts <= 200k tokens'; input $4.00 and output $18.00 for 'prompts > 200k tokens'. That page does not say whether the higher rate covers the whole request. applies_to comes from Google's Vertex AI pricing page (https://cloud.google.com/vertex-ai/generative-ai/pricing, read 2026-10-31), which lists the same rates and says: 'If a query input context is longer than 200K tokens, all tokens (input and output) are charged at long context rates.' That is a different Google product from the Gemini API; owner decision 2026-10-31. Threshold read as 200,000. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "google"
+model = "gemini-2.5-pro"
+effective_from = 2026-10-31
+threshold_tokens = 200000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 1.25
+output_per_mtok = 10.00
+input_per_mtok_above = 2.50
+output_per_mtok_above = 15.00
+source_url = "https://ai.google.dev/gemini-api/docs/pricing"
+as_of = 2026-10-31
+tier = "B"
+shelf_life_days = 30
+notes = "Tier B: the rates are from the Gemini API page, the whole-request rule from another Google page. Rates from the Gemini API page: input $1.25 and output $10.00 for 'prompts <= 200k tokens'; input $2.50 and output $15.00 for 'prompts > 200k tokens'. That page does not say whether the higher rate covers the whole request. applies_to comes from Google's Vertex AI pricing page (https://cloud.google.com/vertex-ai/generative-ai/pricing, read 2026-10-31), which lists the same rates and says: 'If a query input context is longer than 200K tokens, all tokens (input and output) are charged at long context rates.' That is a different Google product from the Gemini API; owner decision 2026-10-31. Threshold read as 200,000. No start date given; effective_from is the check date."
+
+# ---- Anthropic: https://platform.claude.com/docs/en/about-claude/pricing (Model pricing and
+# Long context pricing sections); model IDs from https://platform.claude.com/docs/en/about-claude/models/overview
+# and https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions
+
+[[price]]
+provider = "anthropic"
+model = "claude-haiku-5-5"
+effective_from = 2026-10-31
+threshold_tokens = 100000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 0.10
+output_per_mtok = 0.50
+input_per_mtok_above = 0.50
+output_per_mtok_above = 2.50
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Page rows: 'for prompts up to 100,000 tokens' $0.10 in and $0.50 out; 'for prompts over 100,000 tokens' $0.50 in and $2.50 out. The page says a request whose prompt is over 100,000 tokens pays higher prices and that prompt length counts all input tokens including cache reads and writes, so input_tokens in the usage export should include them. The page does not use the words whole request; applies_to follows its statement that the request pays the higher prices. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "anthropic"
+model = "claude-opus-5"
+effective_from = 2026-11-01
+input_per_mtok = 5.00
+output_per_mtok = 25.00
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+as_of = 2026-11-01
+tier = "A"
+shelf_life_days = 30
+notes = "Model pricing table, read 2026-11-01: input $5 and output $25 per million tokens. The Long context pricing section says Claude 4.6 and later models (except Claude Haiku 5.5) include the full 1M token context window at standard pricing, so this is a single band. The ID claude-opus-5 is named on the model-ids-and-versions page and listed as Active on the model-deprecations page. No start date given; effective_from is the check date. Fast mode and cache prices are not modeled."
+
+[[price]]
+provider = "anthropic"
+model = "claude-opus-5-5"
+effective_from = 2026-11-01
+input_per_mtok = 4.00
+output_per_mtok = 20.00
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+as_of = 2026-11-01
+tier = "A"
+shelf_life_days = 30
+notes = "Model pricing table, read 2026-11-01: input $4 and output $20 per million tokens. The Long context pricing section says Claude 4.6 and later models (except Claude Haiku 5.5) include the full 1M token context window at standard pricing, so this is a single band. The ID claude-opus-5-5 is from the models overview page and listed as Active on the model-deprecations page. No start date given; effective_from is the check date. Fast mode and cache prices are not modeled."
+
+[[price]]
+provider = "anthropic"
+model = "claude-sonnet-5"
+effective_from = 2026-11-01
+input_per_mtok = 2.00
+output_per_mtok = 10.00
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+as_of = 2026-11-01
+tier = "A"
+shelf_life_days = 30
+notes = "Model pricing table, read 2026-11-01: input $2 and output $10 per million tokens. The Long context pricing section says Claude 4.6 and later models (except Claude Haiku 5.5) include the full 1M token context window at standard pricing, so this is a single band. The ID claude-sonnet-5 is named on the model-ids-and-versions page and listed as Active on the model-deprecations page. No start date given; effective_from is the check date. Cache prices are not modeled."
+
+[[price]]
+provider = "anthropic"
+model = "claude-sonnet-5-5"
+effective_from = 2026-11-01
+input_per_mtok = 2.00
+output_per_mtok = 10.00
+source_url = "https://platform.claude.com/docs/en/about-claude/pricing"
+as_of = 2026-11-01
+tier = "A"
+shelf_life_days = 30
+notes = "Model pricing table, read 2026-11-01: input $2 and output $10 per million tokens. The Long context pricing section says Claude 4.6 and later models (except Claude Haiku 5.5) include the full 1M token context window at standard pricing, so this is a single band. The ID claude-sonnet-5-5 is from the models overview page and listed as Active on the model-deprecations page. No start date given; effective_from is the check date. Cache prices are not modeled."
+
+# ---- OpenAI: Standard text token prices from https://developers.openai.com/api/docs/pricing;
+# the long-context rule is from each model's page, https://developers.openai.com/api/docs/models/<model>.
+
+[[price]]
+provider = "openai"
+model = "gpt-6-astra"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 10.00
+output_per_mtok = 50.00
+input_per_mtok_above = 20.00
+output_per_mtok_above = 75.00
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $10.00, output $50.00) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-6-astra says: 'Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "openai"
+model = "gpt-6.1-sol"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 2.00
+output_per_mtok = 10.00
+input_per_mtok_above = 4.00
+output_per_mtok_above = 15.00
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $2.00, output $10.00) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-6.1-sol says: 'API prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "openai"
+model = "gpt-6.1-terra"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 1.00
+output_per_mtok = 5.00
+input_per_mtok_above = 2.00
+output_per_mtok_above = 7.50
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $1.00, output $5.00) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-6.1-terra says: 'Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "openai"
+model = "gpt-6-luna"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 0.10
+output_per_mtok = 0.50
+input_per_mtok_above = 0.20
+output_per_mtok_above = 0.75
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $0.10, output $0.50) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-6-luna says: 'Prompts with more than 272K input tokens are priced at 2x input and cache rates and 1.5x output for the full request'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "openai"
+model = "gpt-5.6-sol"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 4.00
+output_per_mtok = 20.00
+input_per_mtok_above = 8.00
+output_per_mtok_above = 30.00
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $4.00, output $20.00) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-5.6-sol says: 'Prompts with >272K input tokens are priced at 2x input and 1.5x output for the full request'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. The pricing page says this model's promotional pricing is available at least through November 21, 2026, and gives no price after that date; re-check before then. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "openai"
+model = "gpt-5.6-terra"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 2.00
+output_per_mtok = 12.00
+input_per_mtok_above = 4.00
+output_per_mtok_above = 18.00
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $2.00, output $12.00) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-5.6-terra says: 'Prompts with >272K input tokens are priced at 2x input and 1.5x output for the full request'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "openai"
+model = "gpt-5.6-luna"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 0.20
+output_per_mtok = 1.20
+input_per_mtok_above = 0.40
+output_per_mtok_above = 1.80
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $0.20, output $1.20) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-5.6-luna says: 'Prompts with >272K input tokens are priced at 2x input and 1.5x output for the full request'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "openai"
+model = "gpt-5.5"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 5.00
+output_per_mtok = 30.00
+input_per_mtok_above = 10.00
+output_per_mtok_above = 45.00
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $5.00, output $30.00) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-5.5 says: 'For GPT-5.5, prompts with >272K input tokens are priced at 2x input and 1.5x output for the full session for standard, batch, and flex'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. The pricing page labels this model's short row '(<272K context length)', which disagrees with its toggle ('Short: <=272K input tokens'); the toggle and the model page agree and are followed. No start date given; effective_from is the check date."
+
+[[price]]
+provider = "openai"
+model = "gpt-5.4"
+effective_from = 2026-10-31
+threshold_tokens = 272000
+boundary = "at_or_below"
+applies_to = "whole_request"
+input_per_mtok = 2.50
+output_per_mtok = 15.00
+input_per_mtok_above = 5.00
+output_per_mtok_above = 22.50
+source_url = "https://developers.openai.com/api/docs/pricing"
+as_of = 2026-10-31
+tier = "A"
+shelf_life_days = 30
+notes = "Short rates (input $2.50, output $15.00) are the Standard row on the pricing page. Model page https://developers.openai.com/api/docs/models/gpt-5.4 says: 'For models with a 1.05M context window (GPT-5.4 and GPT-5.4 Pro), prompts with >272K input tokens are priced at 2x input and 1.5x output for the full session for standard, batch, and flex'. Pricing page toggle: 'Long: >272K input tokens', so a request at exactly 272K stays in the lower band. Upper rates are computed as 2x input and 1.5x output. 272K is read as 272,000; no page defines K. Cached-input and cache-write prices are not modeled. The pricing page labels this model's short row '(<272K context length)', which disagrees with its toggle ('Short: <=272K input tokens'); the toggle and the model page agree and are followed. No start date given; effective_from is the check date."

@@ -11,6 +11,7 @@ import argparse
 import datetime
 import sys
 from decimal import Decimal
+from importlib.resources import files
 from pathlib import Path
 
 from aicost.bandcost import (
@@ -26,11 +27,12 @@ from aicost.core import (
     PriceTableError,
     PriceWarning,
     load_price_table,
+    parse_price_table,
     stale_warnings,
     tier_warnings,
 )
 
-DEFAULT_PRICES = Path("data") / "prices.toml"
+BUNDLED_PRICES_NAME = "bundled seed prices (aicost/data/prices.toml)"
 EXIT_INPUT_ERROR = 1
 
 NOTE = (
@@ -131,11 +133,15 @@ def _print_warnings(rows: tuple[PriceRow, ...], records: tuple[UsageRecord, ...]
 def _print_unpriced(report: SpendReport, heading: str) -> None:
     if not report.unpriced:
         return
+    groups: dict[tuple[str, str, str], list[int]] = {}
+    for item in report.unpriced:
+        key = (item.record.provider or "", item.record.model, item.reason)
+        groups.setdefault(key, []).append(item.record.line)
     print()
     print(heading)
-    for item in report.unpriced:
-        who = f"{item.record.provider} / " if item.record.provider else ""
-        print(f"  line {item.record.line}: {who}{item.record.model}: {item.reason}")
+    for (provider, model, reason), lines in sorted(groups.items(), key=lambda g: (-len(g[1]), g[0])):
+        who = f"{provider} / " if provider else ""
+        print(f"  {who}{model}: {_plural(len(lines), 'request')}, {reason} (first at line {min(lines)})")
 
 
 def _sorted_groups(report: SpendReport) -> list[BandSpend]:
@@ -183,7 +189,7 @@ def cmd_report(args: argparse.Namespace, rows: tuple[PriceRow, ...], records: tu
     report = spend_by_band(records, rows, args.today)
     priced = len(records) - len(report.unpriced)
     print(f"REPORT: {args.usage}")
-    print(f"Prices: {args.prices}, in force on {args.today}")
+    print(f"Prices: {args.prices_name}, in force on {args.today}")
     print(f"Requests: {len(records):,} read, {priced:,} priced, {len(report.unpriced):,} unpriced")
     _print_warnings(rows, records, args.today)
     print()
@@ -226,7 +232,7 @@ def cmd_schedule(args: argparse.Namespace, rows: tuple[PriceRow, ...], records: 
         key=lambda row: (row.effective_from, row.provider, row.model),
     )
     print(f"SCHEDULE: {args.usage}")
-    print(f"Prices: {args.prices}; today is {args.today}")
+    print(f"Prices: {args.prices_name}; today is {args.today}")
     _print_warnings(rows, records, args.today)
     print()
     print("SCHEDULED PRICE CHANGES TOUCHING MODELS IN THIS EXPORT")
@@ -291,7 +297,7 @@ def cmd_reprice(args: argparse.Namespace, rows: tuple[PriceRow, ...], records: t
     then_totals = _totals_by_model(then_report)
 
     print(f"REPRICE: {args.usage}")
-    print(f"Prices: {args.prices}")
+    print(f"Prices: {args.prices_name}")
     print(f"Same usage priced in force on {args.today} (now) and on {args.on} (then)")
     _print_warnings(rows, records, args.today)
     print()
@@ -348,8 +354,8 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument(
             "--prices",
             type=Path,
-            default=DEFAULT_PRICES,
-            help="price table (TOML); default: %(default)s in the current folder",
+            default=None,
+            help="price table (TOML); default: the seed prices bundled with aicost",
         )
         sub.add_argument(
             "--format",
@@ -380,15 +386,23 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _load_prices(args: argparse.Namespace) -> tuple[PriceRow, ...]:
+    if args.prices is not None:
+        return load_price_table(args.prices, args.today)
+    text = files("aicost").joinpath("data").joinpath("prices.toml").read_text(encoding="utf-8")
+    return parse_price_table(text, args.today)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     args.today = args.today or datetime.date.today()
+    args.prices_name = str(args.prices) if args.prices is not None else BUNDLED_PRICES_NAME
     try:
-        rows = load_price_table(args.prices, args.today)
+        rows = _load_prices(args)
     except PriceTableError as error:
-        return _input_error(args.prices, error.problems)
+        return _input_error(args.prices_name, error.problems)
     except OSError as error:
-        return _input_error(args.prices, [error.strerror or str(error)])
+        return _input_error(args.prices_name, [error.strerror or str(error)])
     try:
         records = load_usage(args.usage, args.format)
     except UsageError as error:
@@ -398,7 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     return args.func(args, rows, records)
 
 
-def _input_error(path: Path, problems: list[str]) -> int:
+def _input_error(path: str | Path, problems: list[str]) -> int:
     print(f"error: cannot use {path}:", file=sys.stderr)
     for problem in problems:
         print(f"  {problem}", file=sys.stderr)

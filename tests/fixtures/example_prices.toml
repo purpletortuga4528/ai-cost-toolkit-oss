@@ -1,5 +1,5 @@
 # Synthetic fixture for tests. The provider, models, rates, and URLs are made up and are
-# not real prices. Real prices live in data/prices.toml.
+# not real prices. Real prices live in src/aicost/data/prices.toml.
 schema_version = 1
 
 # Two bands, boundary "at or below", whole request priced at the band it falls in.

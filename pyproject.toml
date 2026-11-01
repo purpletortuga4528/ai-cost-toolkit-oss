@@ -13,3 +13,6 @@ dependencies = []
 
 [project.scripts]
 aicost = "aicost.cli:main"
+
+[tool.setuptools.package-data]
+aicost = ["data/*.toml"]
