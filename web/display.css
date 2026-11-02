@@ -1,0 +1,166 @@
+/* Display options: theme (system, light, dark), contrast (standard, high), font (standard,
+   atkinson). The script display.js sets data-theme, data-contrast, and data-font on <html>.
+
+   Based on the shared display-options template. The color values below are this app's own:
+   one full set of tokens for each of the four combinations of light or dark with standard or
+   high contrast. Every color in the page must come from these tokens; a test checks every
+   pair in every combination.
+     Standard contrast: text 4.5:1 (WCAG 2.2 SC 1.4.3), borders, focus, and the pressed state
+     3:1 (SC 1.4.11).
+     High contrast: text 7:1 (SC 1.4.6, Level AAA), non-text 3:1 (SC 1.4.11 has no enhanced
+     level), and the values here go well above that.
+   Each combination defines every token, so the cascade never mixes two sets. The system-dark
+   rules at the end repeat the two dark sets for a reader whose system is dark and who has not
+   picked a theme; a test checks the copies match. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #4d4d4d;
+  --link: #0a4fb3;
+  --border: #767676;
+  --focus: #0a4fb3;
+  --panel: #f2f2f2;
+  --field-bg: #ffffff;
+  --field-border: #5c5c5c;
+  --notice-border: #4d4d4d;
+  --warn-bg: #fff1d6;
+  --warn-fg: #3d1f00;
+  --warn-border: #7a3e00;
+  --error-bg: #fde8e8;
+  --error-fg: #5c0f0f;
+  --error-border: #8a1c1c;
+  --pressed-bg: #1a1a1a;
+  --pressed-fg: #ffffff;
+}
+
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* Light, high contrast. */
+:root[data-contrast="high"] {
+  --bg: #ffffff;
+  --fg: #000000;
+  --muted: #262626;
+  --link: #00338a;
+  --border: #000000;
+  --focus: #00338a;
+  --panel: #f0f0f0;
+  --field-bg: #ffffff;
+  --field-border: #000000;
+  --notice-border: #000000;
+  --warn-bg: #fff8e6;
+  --warn-fg: #000000;
+  --warn-border: #5c2e00;
+  --error-bg: #fff0f0;
+  --error-fg: #000000;
+  --error-border: #7a0000;
+  --pressed-bg: #000000;
+  --pressed-fg: #ffffff;
+}
+
+/* Dark, standard contrast. */
+:root[data-theme="dark"] {
+  --bg: #161616;
+  --fg: #f0f0f0;
+  --muted: #bdbdbd;
+  --link: #8ab4ff;
+  --border: #808080;
+  --focus: #8ab4ff;
+  --panel: #242424;
+  --field-bg: #161616;
+  --field-border: #8c8c8c;
+  --notice-border: #a6a6a6;
+  --warn-bg: #3a2a0a;
+  --warn-fg: #ffe6b3;
+  --warn-border: #d9902f;
+  --error-bg: #3d1414;
+  --error-fg: #ffd6d6;
+  --error-border: #e0807f;
+  --pressed-bg: #f0f0f0;
+  --pressed-fg: #161616;
+}
+
+/* Dark, high contrast. */
+:root[data-theme="dark"][data-contrast="high"] {
+  --bg: #000000;
+  --fg: #ffffff;
+  --muted: #e6e6e6;
+  --link: #a8c8ff;
+  --border: #ffffff;
+  --focus: #ffff66;
+  --panel: #1a1a1a;
+  --field-bg: #000000;
+  --field-border: #ffffff;
+  --notice-border: #ffffff;
+  --warn-bg: #1f1500;
+  --warn-fg: #ffffff;
+  --warn-border: #ffcc66;
+  --error-bg: #2a0000;
+  --error-fg: #ffffff;
+  --error-border: #ff9999;
+  --pressed-bg: #ffffff;
+  --pressed-fg: #000000;
+}
+
+/* The bundled font. Files and notice: see NOTICE.txt. The file name has square brackets,
+   written here as %5B and %5D; a test checks that the file exists under that name. */
+@font-face {
+  font-family: "Atkinson Hyperlegible Next";
+  src: url("fonts/AtkinsonHyperlegibleNext%5Bwght%5D.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root[data-font="atkinson"] body {
+  font-family: "Atkinson Hyperlegible Next", sans-serif;
+}
+
+body { background: var(--bg); color: var(--fg); }
+a { color: var(--link); }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* System dark, no explicit theme chosen (or no script): the same two dark sets as above. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161616;
+    --fg: #f0f0f0;
+    --muted: #bdbdbd;
+    --link: #8ab4ff;
+    --border: #808080;
+    --focus: #8ab4ff;
+    --panel: #242424;
+    --field-bg: #161616;
+    --field-border: #8c8c8c;
+    --notice-border: #a6a6a6;
+    --warn-bg: #3a2a0a;
+    --warn-fg: #ffe6b3;
+    --warn-border: #d9902f;
+    --error-bg: #3d1414;
+    --error-fg: #ffd6d6;
+    --error-border: #e0807f;
+    --pressed-bg: #f0f0f0;
+    --pressed-fg: #161616;
+  }
+  :root:not([data-theme="light"])[data-contrast="high"] {
+    --bg: #000000;
+    --fg: #ffffff;
+    --muted: #e6e6e6;
+    --link: #a8c8ff;
+    --border: #ffffff;
+    --focus: #ffff66;
+    --panel: #1a1a1a;
+    --field-bg: #000000;
+    --field-border: #ffffff;
+    --notice-border: #ffffff;
+    --warn-bg: #1f1500;
+    --warn-fg: #ffffff;
+    --warn-border: #ffcc66;
+    --error-bg: #2a0000;
+    --error-fg: #ffffff;
+    --error-border: #ff9999;
+    --pressed-bg: #ffffff;
+    --pressed-fg: #000000;
+  }
+}
