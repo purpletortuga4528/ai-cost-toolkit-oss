@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Self-host versus API cost calculator</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1rem; background: #ffffff; color: #1a1a1a;
+    font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  main { max-width: 64rem; margin: 0 auto; min-width: 0; }
+  p, li, td, th, a, label, .hint, caption { overflow-wrap: anywhere; }
+  h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.25rem; margin: 0 0 .5rem; }
+  h3 { font-size: 1.05rem; margin: 1rem 0 .25rem; }
+  p { margin: .4rem 0; }
+  a { color: #0a4fb3; }
+  a:focus-visible, input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 3px solid #0a4fb3; outline-offset: 2px;
+  }
+  .muted { color: #4d4d4d; }
+  section { border: 1px solid #767676; border-radius: .5rem; padding: 1rem; margin: 1rem 0; }
+  .notice { background: #f2f2f2; border-color: #4d4d4d; }
+  .warn { background: #fff1d6; border: 2px solid #7a3e00; color: #3d1f00; border-radius: .5rem; padding: .5rem .75rem; margin: .5rem 0; }
+  .error { background: #fde8e8; border: 2px solid #8a1c1c; color: #5c0f0f; border-radius: .5rem; padding: .5rem .75rem; margin: .5rem 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .75rem 1rem; }
+  .field { display: flex; flex-direction: column; min-width: 0; }
+  .field label { font-weight: 600; }
+  .field label.sub { font-weight: 400; margin-top: .4rem; }
+  .field input, .field select {
+    font: inherit; padding: .4rem; border: 1px solid #5c5c5c; border-radius: .25rem;
+    background: #ffffff; color: #1a1a1a; width: 100%;
+  }
+  .hint { font-size: .9rem; color: #4d4d4d; margin: .15rem 0 0; }
+  table { border-collapse: collapse; width: 100%; margin: .5rem 0; }
+  caption { text-align: left; font-weight: 600; padding: .25rem 0; }
+  th, td { border: 1px solid #767676; padding: .35rem .5rem; text-align: left; vertical-align: top; }
+  th { background: #ececec; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .floor { font-weight: 700; }
+  .scroll { overflow-x: auto; }
+  ul.plain { margin: .25rem 0 .25rem 1.25rem; padding: 0; }
+  button { font: inherit; padding: .4rem .8rem; border: 1px solid #1a1a1a; border-radius: .25rem; background: #ececec; color: #1a1a1a; cursor: pointer; }
+  details { margin: .5rem 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  code { background: #ececec; padding: 0 .2rem; border-radius: .2rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Self-host versus API cost calculator</h1>
+    <p>Prices self-hosted inference per million output tokens and sets it beside an API price, with utilization as a required input. It does not recommend self-hosting or an API.</p>
+    <p class="muted">Runs in this page only. It makes no network request and stores nothing. The formulas are the ones printed in Brief 04, section 8.1.</p>
+  </header>
+
+  <div id="stale-banner" role="status" aria-live="polite"></div>
+
+  <section class="notice" aria-labelledby="notice-title">
+    <h2 id="notice-title">Read this first: every owned-hardware result is a floor</h2>
+    <p>The owned-hardware model counts only the accelerator purchase spread over its amortization period and the electricity it draws. It leaves out these items, which can only raise the cost of self-hosting and never raise the cost of an API:</p>
+    <ul class="plain">
+      <li>host systems</li>
+      <li>networking</li>
+      <li>storage</li>
+      <li>redundancy</li>
+      <li>space</li>
+      <li>cooling capital</li>
+      <li>bandwidth</li>
+      <li>license compliance</li>
+      <li>operating labor</li>
+      <li>safety maintenance</li>
+    </ul>
+    <p>It also does not price capability equivalence: whether the self-hosted model does the same job as the API model you compare it with. Brief 04 does not price this and says it does not believe it can be priced from public information.</p>
+    <p>Throughput is a figure you supply. A saturated benchmark throughput overstates what a real request pattern achieves, so every result here is also a floor in that sense.</p>
+  </section>
+
+  <section aria-labelledby="api-title">
+    <h2 id="api-title">API price to compare with</h2>
+    <div class="grid">
+      <div class="field">
+        <label for="api-price">API price, dollars per million output tokens</label>
+        <input id="api-price" type="number" step="any" min="0" inputmode="decimal" aria-describedby="api-hint">
+        <p class="hint" id="api-hint">Optional. Enter the price of a model you would actually compare against. It is used for the break-even figures and the comparisons below.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="owned-title">
+    <h2 id="owned-title">Owned hardware</h2>
+    <p>The paper keeps two utilization figures apart: <strong>u</strong>, the share of the year the hardware is producing tokens, and <strong>p</strong>, the share of the year it is powered. p is never below u. Both results are shown.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="o-tps">Throughput per accelerator, tokens per second</label>
+        <input id="o-tps" type="number" step="any" min="0" inputmode="decimal" aria-describedby="o-tps-hint">
+        <p class="hint" id="o-tps-hint">Output tokens per second for one accelerator, from your own benchmark or a published one.</p>
+      </div>
+      <div class="field">
+        <label for="o-acc">Accelerators</label>
+        <input id="o-acc" type="number" step="1" min="1" inputmode="numeric" aria-describedby="o-acc-hint">
+        <p class="hint" id="o-acc-hint">A whole number. It cancels out of the cost per token, but it sets the totals.</p>
+      </div>
+      <div class="field">
+        <label for="o-price">Unit price, dollars per accelerator</label>
+        <input id="o-price" type="number" step="any" min="0" inputmode="decimal" aria-describedby="o-price-hint">
+        <p class="hint" id="o-price-hint">What you would pay, from a quote or listing. No preset is offered because manufacturers do not publish prices for these parts.</p>
+      </div>
+      <div class="field">
+        <label for="o-years">Amortization period, years</label>
+        <input id="o-years" type="number" step="any" min="0" inputmode="decimal" value="5" aria-describedby="o-years-hint">
+        <p class="hint" id="o-years-hint">Brief 04 uses 5. This is a setting, not a sourced figure.</p>
+      </div>
+      <div class="field">
+        <label for="o-tdp">TDP per accelerator, watts</label>
+        <input id="o-tdp" type="number" step="any" min="0" inputmode="decimal" aria-describedby="o-tdp-hint">
+        <p class="hint" id="o-tdp-hint">Rated power, from the vendor's page. Measured draw is usually lower, so this overstates energy.</p>
+      </div>
+      <div class="field">
+        <label for="o-tariff">Electricity tariff, dollars per kWh</label>
+        <input id="o-tariff" type="number" step="any" min="0" inputmode="decimal" aria-describedby="o-tariff-source">
+        <label for="o-tariff-preset" class="sub">Or choose a preset</label>
+        <select id="o-tariff-preset" aria-describedby="o-tariff-source"></select>
+        <p class="hint" id="o-tariff-source"></p>
+      </div>
+      <div class="field">
+        <label for="o-pue">PUE, power usage effectiveness</label>
+        <input id="o-pue" type="number" step="any" min="1" inputmode="decimal" aria-describedby="o-pue-source">
+        <label for="o-pue-preset" class="sub">Or choose a preset</label>
+        <select id="o-pue-preset" aria-describedby="o-pue-source"></select>
+        <p class="hint" id="o-pue-source"></p>
+      </div>
+      <div class="field">
+        <label for="o-u">Utilization u, share of the year producing tokens (required)</label>
+        <input id="o-u" type="number" step="any" min="0" max="1" inputmode="decimal" aria-describedby="o-u-hint">
+        <p class="hint" id="o-u-hint">A number above 0 and up to 1. There is no default: the answer depends on it.</p>
+      </div>
+    </div>
+    <div id="o-results" aria-live="polite"></div>
+  </section>
+
+  <section aria-labelledby="sens-title">
+    <h2 id="sens-title">Sensitivity strip: PUE, tariff, and amortization years</h2>
+    <p>Each table changes one input and holds the rest at the values above. The list in each box is editable: separate values with commas.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="s-pue">PUE values</label>
+        <input id="s-pue" type="text" inputmode="decimal" aria-describedby="s-pue-hint">
+        <p class="hint" id="s-pue-hint"></p>
+      </div>
+      <div class="field">
+        <label for="s-tariff">Tariff values, dollars per kWh</label>
+        <input id="s-tariff" type="text" inputmode="decimal" aria-describedby="s-tariff-hint">
+        <p class="hint" id="s-tariff-hint"></p>
+      </div>
+      <div class="field">
+        <label for="s-years">Amortization years</label>
+        <input id="s-years" type="text" inputmode="decimal" aria-describedby="s-years-hint">
+        <p class="hint" id="s-years-hint"></p>
+      </div>
+    </div>
+    <div id="s-results" aria-live="polite"></div>
+  </section>
+
+  <section aria-labelledby="metered-title">
+    <h2 id="metered-title">Rental, metered (billed for the hours you use)</h2>
+    <p>A metered rental is billed only for hours used, so its cost per token does not depend on utilization. It is shown apart from committed rental on purpose.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="m-rate">Hourly rate, dollars per accelerator-hour</label>
+        <input id="m-rate" type="number" step="any" min="0" inputmode="decimal" aria-describedby="m-rate-hint">
+        <p class="hint" id="m-rate-hint">From the vendor's own price page.</p>
+      </div>
+      <div class="field">
+        <label for="m-tps">Throughput per accelerator, tokens per second</label>
+        <input id="m-tps" type="number" step="any" min="0" inputmode="decimal">
+      </div>
+    </div>
+    <div id="m-results" aria-live="polite"></div>
+  </section>
+
+  <section aria-labelledby="committed-title">
+    <h2 id="committed-title">Rental, committed (billed for the whole term)</h2>
+    <p>A committed rental is billed whether you use it or not, so its cost per token scales with 1 / u, like owned capital.</p>
+    <div class="grid">
+      <div class="field">
+        <label for="c-rate">Committed hourly rate, dollars per accelerator-hour</label>
+        <input id="c-rate" type="number" step="any" min="0" inputmode="decimal" aria-describedby="c-rate-hint">
+        <p class="hint" id="c-rate-hint">The rate for the term you would commit to, from the vendor's own price page.</p>
+      </div>
+      <div class="field">
+        <label for="c-tps">Throughput per accelerator, tokens per second</label>
+        <input id="c-tps" type="number" step="any" min="0" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label for="c-u">Utilization u of the committed hours (required)</label>
+        <input id="c-u" type="number" step="any" min="0" max="1" inputmode="decimal" aria-describedby="c-u-hint">
+        <p class="hint" id="c-u-hint">A number above 0 and up to 1.</p>
+      </div>
+    </div>
+    <div id="c-results" aria-live="polite"></div>
+  </section>
+
+  <section aria-labelledby="sources-title">
+    <h2 id="sources-title">Preset sources</h2>
+    <p>Each preset shows where it came from, the day it was read, its tier, and its shelf life. The page warns when a selected preset is older than its shelf life. Tier A: checked against the primary source. Tier B: a named credible source, or the primary source read through a copy. Tier C: a single contested source. A scenario value reproduces a published analysis and is not a market figure.</p>
+    <div id="presets-table" class="scroll"></div>
+  </section>
+
+  <section aria-labelledby="limits-title">
+    <h2 id="limits-title">What this is not</h2>
+    <ul class="plain">
+      <li>It is not a recommendation to self-host or to use an API. Brief 04 says no version of this analysis can say which to choose.</li>
+      <li>It is not a forecast. A floor is the lowest cost the model can reach, not the cost you will pay.</li>
+      <li>It would be shown wrong by measured results: a measured power draw below the TDP, a measured throughput for your request pattern, or an invoice that differs from the model.</li>
+    </ul>
+  </section>
+</main>
+<script src="model.js"></script>
+<script src="presets.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
