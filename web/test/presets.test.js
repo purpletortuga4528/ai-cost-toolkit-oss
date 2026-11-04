@@ -10,6 +10,9 @@ const presets = require('../presets.js');
 const presetStatus = presets.presetStatus;
 
 const TODAY = '2026-11-02';
+// The day the shipped presets were last read at their publishers. A shipped preset may not be
+// dated after it, and none may be stale on it.
+const SHIPPED_DAY = '2026-11-04';
 
 function sample(changes) {
   return Object.assign({
@@ -125,10 +128,12 @@ test('every shipped preset carries a source URL, an as-of date, a tier, and a sh
   for (const group of Object.keys(presets.PRESETS)) {
     for (const p of presets.PRESETS[group]) {
       count += 1;
-      assert.deepStrictEqual(presets.validatePreset(p, TODAY), [], group + '/' + p.id);
+      assert.deepStrictEqual(presets.validatePreset(p, SHIPPED_DAY), [], group + '/' + p.id);
     }
   }
-  assert.ok(count >= 5, 'expected the tariff and PUE presets, found ' + count);
+  assert.strictEqual(presets.PRESETS.tariff.length, 2);
+  assert.strictEqual(presets.PRESETS.pue.length, 6);
+  assert.strictEqual(count, 8);
 });
 
 test('shipped presets are not stale on their check day, and have unique ids per group', () => {
@@ -137,7 +142,7 @@ test('shipped presets are not stale on their check day, and have unique ids per 
     for (const p of presets.PRESETS[group]) {
       assert.ok(!ids.has(p.id), 'duplicate id ' + p.id);
       ids.add(p.id);
-      assert.strictEqual(presets.presetStatus(p, TODAY).stale, false, group + '/' + p.id);
+      assert.strictEqual(presets.presetStatus(p, SHIPPED_DAY).stale, false, group + '/' + p.id);
     }
   }
 });
@@ -145,31 +150,51 @@ test('shipped presets are not stale on their check day, and have unique ids per 
 test('tariff presets are dollars per kWh and match the values read from the sources', () => {
   const byId = {};
   presets.PRESETS.tariff.forEach((p) => { byId[p.id] = p; });
-  // EIA Electricity Monthly Update, industrial sector, US average, August 2026 (preliminary),
-  // read on 2026-11-02: 9.64 cents per kWh.
+  // EIA Electric Power Monthly, Table 5.6.A, industrial sector, U.S. Total, August 2026
+  // (preliminary), re-read at the page on 2026-11-04: 9.64 cents per kWh.
   assert.strictEqual(byId['eia-industrial-2026-08'].value, 0.0964);
   assert.strictEqual(byId['eia-industrial-2026-08'].kind, 'published');
   assert.strictEqual(byId['eia-industrial-2026-08'].shelf_life_days, 35);
+  assert.strictEqual(byId['eia-industrial-2026-08'].tier, 'A');
   // Brief 04 section 5.2: 9.17 cents per kWh industrial, June 2026 data. A reproduction value.
+  // Read on 2026-11-04 in EIA's own August 2026 issue (archive), Table 5.6.A, U.S. Total,
+  // Industrial, June 2026: 9.17 (preliminary at that time).
   assert.strictEqual(byId['brief04-industrial-2026-06'].value, 0.0917);
   assert.strictEqual(byId['brief04-industrial-2026-06'].kind, 'scenario');
   assert.strictEqual(byId['brief04-industrial-2026-06'].shelf_life_days, null);
+  assert.strictEqual(byId['brief04-industrial-2026-06'].tier, 'A');
+  assert.match(byId['brief04-industrial-2026-06'].source_url,
+    /^https:\/\/www\.eia\.gov\/electricity\/monthly\/archive\/august2026\.zip$/);
 });
 
 test('PUE presets match the values read from the sources', () => {
   const byId = {};
   presets.PRESETS.pue.forEach((p) => { byId[p.id] = p; });
-  // Brief 04 section 8.2 scenario, from the 2016 national laboratory report, Table 4, hyperscale.
+  // Brief 04 section 8.2 scenario, from the 2016 national laboratory report (LBNL-1005775),
+  // Table 4, hyperscale, read in the publisher's own PDF on 2026-11-04. An assumed value.
   assert.strictEqual(byId['brief04-1.2'].value, 1.2);
   assert.strictEqual(byId['brief04-1.2'].kind, 'scenario');
-  // Uptime Institute Global Data Center Survey 2025, as read in a local copy on 2026-11-02.
+  assert.strictEqual(byId['brief04-1.2'].tier, 'A');
+  assert.match(byId['brief04-1.2'].source_url, /^https:\/\/eta-publications\.lbl\.gov\/sites\/default\/files\/lbnl-1005775_v2\.pdf$/);
+  // Uptime Institute Global Data Center Survey 2025 (Keynote Report 180, July 2025), read in the
+  // publisher's public PDF on 2026-11-04: pages 7 and 8.
   assert.strictEqual(byId['uptime-2025-average'].value, 1.54);
   assert.strictEqual(byId['uptime-2025-newer'].value, 1.48);
   assert.strictEqual(byId['uptime-2025-20mw'].value, 1.44);
-  for (const id of ['uptime-2025-average', 'uptime-2025-newer', 'uptime-2025-20mw']) {
-    assert.strictEqual(byId[id].tier, 'B');
-    assert.strictEqual(byId[id].shelf_life_days, 365);
+  // Global Data Center Survey 2026 (Keynote Report 209, July 2026), same day: "industry
+  // average" on page 7 and the respondents' largest data centers on page 8.
+  assert.strictEqual(byId['uptime-2026-average'].value, 1.52);
+  assert.strictEqual(byId['uptime-2026-largest'].value, 1.45);
+  for (const id of ['uptime-2025-average', 'uptime-2025-newer', 'uptime-2025-20mw',
+    'uptime-2026-average', 'uptime-2026-largest']) {
+    assert.strictEqual(byId[id].kind, 'published', id);
+    assert.strictEqual(byId[id].tier, 'A', id);
+    assert.strictEqual(byId[id].shelf_life_days, 365, id);
+    assert.match(byId[id].source_url, /^https:\/\/datacenter\.uptimeinstitute\.com\/rs\/711-RIA-145\/images\/.+\.pdf/, id);
   }
+  assert.match(byId['uptime-2026-average'].note, /industry average/);
+  assert.match(byId['uptime-2026-average'].note, /whether the two are the same measure is not\s+stated/);
+  assert.match(byId['uptime-2025-average'].note, /weighted average/);
 });
 
 test('every PUE preset is at least 1, the lowest value model.js accepts', () => {
@@ -184,5 +209,14 @@ test('sensitivity defaults list the three axes the page sweeps', () => {
     assert.strictEqual(typeof d[axis].note, 'string', axis);
   }
   assert.deepStrictEqual(d.amortizationYears.values, [3, 5, 7]);
+  assert.deepStrictEqual(d.pue.values, [1.2, 1.45, 1.52]);
+  assert.deepStrictEqual(d.tariff.values, [0.0917, 0.0964]);
   assert.ok(/not sourced|illustrative/i.test(d.amortizationYears.note));
+});
+
+test('every sensitivity value for PUE and tariff is one of the shipped preset values', () => {
+  const pue = presets.PRESETS.pue.map((p) => p.value);
+  const tariff = presets.PRESETS.tariff.map((p) => p.value);
+  presets.SENSITIVITY_DEFAULTS.pue.values.forEach((v) => assert.ok(pue.indexOf(v) !== -1, 'PUE ' + v));
+  presets.SENSITIVITY_DEFAULTS.tariff.values.forEach((v) => assert.ok(tariff.indexOf(v) !== -1, 'tariff ' + v));
 });
