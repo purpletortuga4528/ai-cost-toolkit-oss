@@ -1,8 +1,10 @@
 """Command line: report, schedule, and reprice.
 
 All three read a price table (TOML) and a usage export (CSV or JSON Lines). Output is plain
-ASCII text on standard output; problems with the input files go to standard error and exit
-code 1. Money is rounded to four decimals for display only; the arithmetic is exact.
+ASCII text on standard output: any character in a file name, provider, model, or other text
+read from a file that is not printable ASCII is shown as a backslash escape. Problems with
+the input files go to standard error and exit code 1. Money is rounded to four decimals for
+display only; the arithmetic is exact.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from aicost.core import (
     PriceWarning,
     load_price_table,
     parse_price_table,
+    safe_text,
     stale_warnings,
     tier_warnings,
 )
@@ -88,7 +91,7 @@ def _rates_text(row: PriceRow) -> str:
 
 
 def _label(row: PriceRow) -> str:
-    return f"{row.provider} / {row.model}"
+    return f"{safe_text(row.provider)} / {safe_text(row.model)}"
 
 
 def _plural(count: int, word: str) -> str:
@@ -125,8 +128,8 @@ def _print_warnings(rows: tuple[PriceRow, ...], records: tuple[UsageRecord, ...]
         print("  none")
     for warning in warnings:
         print(
-            f"  - {warning.provider} / {warning.model} (row effective {warning.effective_from}) "
-            f"[{warning.kind}] {warning.message}"
+            f"  - {safe_text(warning.provider)} / {safe_text(warning.model)} "
+            f"(row effective {warning.effective_from}) [{warning.kind}] {safe_text(warning.message)}"
         )
 
 
@@ -140,8 +143,11 @@ def _print_unpriced(report: SpendReport, heading: str) -> None:
     print()
     print(heading)
     for (provider, model, reason), lines in sorted(groups.items(), key=lambda g: (-len(g[1]), g[0])):
-        who = f"{provider} / " if provider else ""
-        print(f"  {who}{model}: {_plural(len(lines), 'request')}, {reason} (first at line {min(lines)})")
+        who = f"{safe_text(provider)} / " if provider else ""
+        print(
+            f"  {who}{safe_text(model)}: {_plural(len(lines), 'request')}, {safe_text(reason)} "
+            f"(first at line {min(lines)})"
+        )
 
 
 def _sorted_groups(report: SpendReport) -> list[BandSpend]:
@@ -188,8 +194,8 @@ def _print_group(group: BandSpend) -> None:
 def cmd_report(args: argparse.Namespace, rows: tuple[PriceRow, ...], records: tuple[UsageRecord, ...]) -> int:
     report = spend_by_band(records, rows, args.today)
     priced = len(records) - len(report.unpriced)
-    print(f"REPORT: {args.usage}")
-    print(f"Prices: {args.prices_name}, in force on {args.today}")
+    print(f"REPORT: {safe_text(args.usage)}")
+    print(f"Prices: {safe_text(args.prices_name)}, in force on {args.today}")
     print(f"Requests: {len(records):,} read, {priced:,} priced, {len(report.unpriced):,} unpriced")
     _print_warnings(rows, records, args.today)
     print()
@@ -231,8 +237,8 @@ def cmd_schedule(args: argparse.Namespace, rows: tuple[PriceRow, ...], records: 
         (row for row in _relevant_rows(rows, records) if row.effective_from > args.today),
         key=lambda row: (row.effective_from, row.provider, row.model),
     )
-    print(f"SCHEDULE: {args.usage}")
-    print(f"Prices: {args.prices_name}; today is {args.today}")
+    print(f"SCHEDULE: {safe_text(args.usage)}")
+    print(f"Prices: {safe_text(args.prices_name)}; today is {args.today}")
     _print_warnings(rows, records, args.today)
     print()
     print("SCHEDULED PRICE CHANGES TOUCHING MODELS IN THIS EXPORT")
@@ -266,7 +272,7 @@ def cmd_schedule(args: argparse.Namespace, rows: tuple[PriceRow, ...], records: 
             f"{sum(r.input_tokens for r in matched):,} input tokens, "
             f"{sum(r.output_tokens for r in matched):,} output tokens"
         )
-        print(f"  source: {row.source_url} (checked {row.as_of}, tier {row.tier})")
+        print(f"  source: {safe_text(row.source_url)} (checked {row.as_of}, tier {row.tier})")
     print()
     print("Use 'reprice --on DATE' to see what your usage would cost on a given date.")
     return 0
@@ -296,8 +302,8 @@ def cmd_reprice(args: argparse.Namespace, rows: tuple[PriceRow, ...], records: t
     now_totals = _totals_by_model(now_report)
     then_totals = _totals_by_model(then_report)
 
-    print(f"REPRICE: {args.usage}")
-    print(f"Prices: {args.prices_name}")
+    print(f"REPRICE: {safe_text(args.usage)}")
+    print(f"Prices: {safe_text(args.prices_name)}")
     print(f"Same usage priced in force on {args.today} (now) and on {args.on} (then)")
     _print_warnings(rows, records, args.today)
     print()
@@ -305,7 +311,7 @@ def cmd_reprice(args: argparse.Namespace, rows: tuple[PriceRow, ...], records: t
     for key in sorted(set(now_totals) | set(then_totals)):
         now = now_totals.get(key)
         then = then_totals.get(key)
-        who = f"{key[0]} / {key[1]}"
+        who = f"{safe_text(key[0])} / {safe_text(key[1])}"
         if now is None or then is None:
             side = "now" if now is None else "then"
             print(f"  {who}: not priced {side}; no comparison")
@@ -400,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         rows = _load_prices(args)
     except PriceTableError as error:
-        return _input_error(args.prices_name, error.problems)
+        return _input_error(args.prices_name, error.problems, _future_hint(error.problems, args.today))
     except OSError as error:
         return _input_error(args.prices_name, [error.strerror or str(error)])
     try:
@@ -412,10 +418,22 @@ def main(argv: list[str] | None = None) -> int:
     return args.func(args, rows, records)
 
 
-def _input_error(path: str | Path, problems: list[str]) -> int:
-    print(f"error: cannot use {path}:", file=sys.stderr)
+def _future_hint(problems: list[str], today: datetime.date) -> list[str]:
+    """Explain the one cause a user can fix at once: every row was checked after the date in use."""
+    if not problems or not all(problem.endswith(" is in the future") for problem in problems):
+        return []
+    return [
+        f"hint: every problem above is a price checked after {today}, the date in use.",
+        "If you passed --today, use a later date; if not, check this computer's date.",
+    ]
+
+
+def _input_error(path: str | Path, problems: list[str], hint: list[str] | None = None) -> int:
+    print(f"error: cannot use {safe_text(path)}:", file=sys.stderr)
     for problem in problems:
-        print(f"  {problem}", file=sys.stderr)
+        print(f"  {safe_text(problem)}", file=sys.stderr)
+    for line in hint or []:
+        print(f"  {line}", file=sys.stderr)
     return EXIT_INPUT_ERROR
 
 

@@ -13,6 +13,7 @@ from aicost.core.schema import (
     tier_warnings,
 )
 from aicost.core.stale import stale_warnings
+from aicost.core.text import safe_text
 
 __all__ = [
     "APPLIES_TO",
@@ -25,6 +26,7 @@ __all__ = [
     "PriceWarning",
     "load_price_table",
     "parse_price_table",
+    "safe_text",
     "stale_warnings",
     "tier_warnings",
 ]
