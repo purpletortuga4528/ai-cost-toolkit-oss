@@ -216,5 +216,59 @@ class TierWarnings(unittest.TestCase):
         self.assertEqual(warned[0].kind, "tier_c")
 
 
+class RateLimit(unittest.TestCase):
+    """A rate is at most 1,000,000 dollars per million tokens, so cost arithmetic cannot overflow."""
+
+    LIMIT = Decimal(1_000_000)
+
+    def test_the_limit_is_accepted_and_anything_above_is_not(self):
+        validate_rows([good_row(input_per_mtok=self.LIMIT, output_per_mtok=1_000_000)], TODAY)
+        for name in ("input_per_mtok", "output_per_mtok"):
+            with self.subTest(name=name):
+                found = problems_for(good_row(**{name: self.LIMIT + Decimal("0.01")}))
+                self.assertEqual(len(found), 1, found)
+                self.assertIn(f"{name} must be at most 1,000,000", found[0])
+
+    def test_an_enormous_exponent_is_rejected_as_a_problem(self):
+        for bad in (Decimal("1e999999999"), Decimal("1e400"), 10**30):
+            with self.subTest(rate=bad):
+                self.assertTrue(any("at most 1,000,000" in p for p in problems_for(good_row(input_per_mtok=bad))))
+
+    def test_the_upper_band_rates_have_the_same_limit(self):
+        for name in ("input_per_mtok_above", "output_per_mtok_above"):
+            with self.subTest(name=name):
+                found = problems_for(banded_row(**{name: Decimal("1e999999999")}))
+                self.assertTrue(any(f"{name} must be at most 1,000,000" in p for p in found), found)
+
+    def test_a_tiny_rate_is_fine(self):
+        (row,) = validate_rows([good_row(input_per_mtok=Decimal("1e-999999999"))], TODAY)
+        self.assertEqual(row.input_per_mtok, Decimal("1e-999999999"))
+
+
+class UntrustedTextInProblems(unittest.TestCase):
+    def test_labels_and_key_names_are_escaped_and_cut(self):
+        row = good_row(provider="p\x1b]0;x\x07", model="caf\u00e9 " + "m" * 300, tier="Z")
+        row["bad\x1b[2Jkey\u8a9e"] = 1
+        found = problems_for(row)
+        self.assertGreaterEqual(len(found), 2, found)
+        for problem in found:
+            with self.subTest(problem=problem[:60]):
+                self.assertTrue(all(" " <= c <= "~" for c in problem), problem)
+                self.assertLess(len(problem), 400)
+        self.assertTrue(any("p\\x1b]0;x\\x07/caf\\xe9 " in p for p in found), found)
+        self.assertTrue(any("unknown key 'bad\\x1b[2Jkey\\u8a9e'" in p for p in found), found)
+
+    def test_a_label_built_from_non_text_values_does_not_fail(self):
+        found = problems_for({"provider": {"a": 1}, "model": ["x"] * 1000})
+        self.assertTrue(found)
+        self.assertTrue(all(" " <= c <= "~" for p in found for c in p))
+
+
+class OtherFieldRules(unittest.TestCase):
+    def test_notes_must_be_a_string(self):
+        self.assertTrue(any("notes must be a string" in p for p in problems_for(good_row(notes=5))))
+        validate_rows([good_row(notes="a note")], TODAY)
+
+
 if __name__ == "__main__":
     unittest.main()

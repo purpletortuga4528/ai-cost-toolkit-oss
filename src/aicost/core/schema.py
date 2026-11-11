@@ -13,11 +13,16 @@ from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
 
+from aicost.core.text import ECHO_LIMIT, safe_text
+
 SCHEMA_VERSION = 1
 DEFAULT_SHELF_LIFE_DAYS = 30
 BOUNDARY_RULES = ("at_or_below", "under")
 APPLIES_TO = ("whole_request", "marginal")
 SHIPPED_TIERS = ("A", "B", "C")
+# The highest rate a row may hold, in US dollars per million tokens. Real rates are under
+# about $1,000; the limit keeps every cost inside exact Decimal arithmetic.
+MAX_RATE_PER_MTOK = Decimal(1_000_000)
 
 _REQUIRED = (
     "provider",
@@ -86,7 +91,7 @@ def _is_date(value: Any) -> bool:
 
 
 def _rate(value: Any, name: str, problems: list[str], where: str) -> Decimal | None:
-    """Accept an int or Decimal that is finite and not negative.
+    """Accept an int or Decimal that is finite, not negative, and at most MAX_RATE_PER_MTOK.
 
     A float is rejected: the loader parses TOML floats as Decimal, so a float here
     means the caller bypassed that and the value may already be inexact.
@@ -97,6 +102,9 @@ def _rate(value: Any, name: str, problems: list[str], where: str) -> Decimal | N
     rate = Decimal(value)
     if not rate.is_finite() or rate < 0:
         problems.append(f"{where}: {name} must be finite and not negative")
+        return None
+    if rate > MAX_RATE_PER_MTOK:
+        problems.append(f"{where}: {name} must be at most {MAX_RATE_PER_MTOK:,} dollars per million tokens")
         return None
     return rate
 
@@ -114,12 +122,12 @@ def validate_row(raw: Any, index: int, today: datetime.date, problems: list[str]
     if not isinstance(raw, dict):
         problems.append(f"{where}: must be a table")
         return None
-    label = f"{raw.get('provider')}/{raw.get('model')}"
+    label = f"{safe_text(raw.get('provider'), ECHO_LIMIT)}/{safe_text(raw.get('model'), ECHO_LIMIT)}"
     where = f"row {index} ({label})"
     start = len(problems)
 
     for key in sorted(set(raw) - _KNOWN):
-        problems.append(f"{where}: unknown key {key!r}")
+        problems.append(f"{where}: unknown key {safe_text(repr(key), ECHO_LIMIT)}")
     for key in _REQUIRED:
         if key not in raw:
             problems.append(f"{where}: missing required key {key!r}")

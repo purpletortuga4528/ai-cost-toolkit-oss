@@ -1,4 +1,5 @@
 import datetime
+import tempfile
 import unittest
 from decimal import Decimal
 from pathlib import Path
@@ -103,6 +104,48 @@ class Rejections(unittest.TestCase):
     def test_offset_datetime_is_not_a_date(self):
         text = "schema_version = 1\n" + ROW.replace("as_of = 2026-10-31", "as_of = 2026-10-31T12:00:00Z")
         self.check(text, "as_of must be a date")
+
+    def test_deeply_nested_toml_is_a_problem_not_a_crash(self):
+        for text in ("x = " + "[" * 5000 + "]" * 5000, "x = " + "{a=" * 2000 + "1" + "}" * 2000):
+            with self.subTest(text=text[:12]):
+                self.check("schema_version = 1\n" + text + "\n" + ROW, "nested too deeply")
+
+    def test_an_integer_with_thousands_of_digits_is_a_problem_not_a_crash(self):
+        for key in ("shelf_life_days", "threshold_tokens"):
+            with self.subTest(key=key):
+                self.check("schema_version = 1\n" + ROW + f"{key} = " + "9" * 5000 + "\n", "could not be read")
+
+    def test_a_key_name_is_escaped_in_the_problem_text(self):
+        text = 'schema_version = 1\n"bad\\u001b[2Jk\\u00e9y" = 1\n' + ROW
+        with self.assertRaises(PriceTableError) as raised:
+            parse_price_table(text, TODAY)
+        (problem,) = raised.exception.problems
+        self.assertEqual(problem, "unknown top-level key 'bad\\x1b[2Jk\\xe9y'")
+
+
+class ReadingFiles(unittest.TestCase):
+    def write(self, data):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / "prices.toml"
+        path.write_bytes(data)
+        return path
+
+    def test_a_byte_order_mark_is_accepted(self):
+        path = self.write(b"\xef\xbb\xbf" + ("schema_version = 1\n" + ROW).encode("utf-8"))
+        self.assertEqual(len(load_price_table(path, TODAY)), 1)
+
+    def test_a_file_that_is_not_utf8_is_a_price_table_error(self):
+        path = self.write(b"schema_version = 1\n# caf\xe9\n")
+        with self.assertRaises(PriceTableError) as raised:
+            load_price_table(path, TODAY)
+        (problem,) = raised.exception.problems
+        self.assertEqual(problem, "not valid UTF-8 (at byte 24): invalid continuation byte")
+
+    def test_utf16_is_not_utf8(self):
+        path = self.write(("schema_version = 1\n" + ROW).encode("utf-16"))
+        with self.assertRaises(PriceTableError):
+            load_price_table(path, TODAY)
 
 
 if __name__ == "__main__":

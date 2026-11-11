@@ -26,6 +26,7 @@ On 2027-01-01 model-a's rates are 1.5 times higher: with bands 1.92. Total 2.690
 
 import contextlib
 import io
+import os
 import re
 import subprocess
 import sys
@@ -351,6 +352,47 @@ class BadInput(unittest.TestCase):
         self.assertIn("is in the future", err)
 
 
+class FutureCheckDateHint(unittest.TestCase):
+    """Review 1, finding 10: when every problem is a price checked after the date in use, say what to do."""
+
+    def test_the_bundled_table_with_an_early_today_gets_a_hint(self):
+        code, out, err = run("report", SEED_USAGE, "--today", "2020-01-01")
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("error: cannot use bundled seed prices"), err)
+        self.assertIn("is in the future", err)
+        self.assertIn("hint: every problem above is a price checked after 2020-01-01, the date in use.", err)
+        self.assertIn("If you passed --today, use a later date; if not, check this computer's date.", err)
+
+    def test_a_price_file_gets_the_same_hint(self):
+        code, _, err = run("report", CSV, "--prices", PRICES, "--today", "2026-10-30")
+        self.assertEqual(code, 1)
+        self.assertIn("hint: every problem above is a price checked after 2026-10-30", err)
+
+    def test_no_hint_when_a_problem_is_something_else(self):
+        with tempfile.TemporaryDirectory() as directory:
+            text = price_table(as_of="2999-01-01", tier="Z")
+            code, _, err = run("report", CSV, "--prices", write(directory, "p.toml", text), "--today", TODAY)
+        self.assertEqual(code, 1)
+        self.assertIn("is in the future", err)
+        self.assertIn("tier", err)
+        self.assertNotIn("hint:", err)
+
+    def test_no_hint_for_other_errors_or_on_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bad = write(directory, "p.toml", "schema_version = 2\n")
+            _, _, err = run("report", CSV, "--prices", bad, "--today", TODAY)
+            self.assertNotIn("hint:", err)
+            usage = write(directory, "u.csv", "model,input_tokens\nm,1\n")
+            _, _, err = run("report", usage, "--prices", PRICES, "--today", TODAY)
+            self.assertNotIn("hint:", err)
+        code, _, err = run("report", CSV, "--prices", PRICES, "--today", TODAY)
+        self.assertEqual((code, err), (0, ""))
+
+    def test_the_hint_is_plain_ascii(self):
+        _, _, err = run("report", CSV, "--prices", PRICES, "--today", "2026-10-30")
+        self.assertTrue(plain(err), err)
+
+
 class UnpricedGrouping(unittest.TestCase):
     """Unpriced requests are listed once per provider, model, and reason, with a count.
 
@@ -495,6 +537,219 @@ class Subprocess(unittest.TestCase):
         )
         self.assertEqual((done.returncode, done.stderr), (0, ""))
         self.assertIn("cost with bands:       $2.6900", done.stdout)
+
+
+def toml_text(text):
+    """TOML basic-string body for `text`: control and non-ASCII characters become \\uXXXX escapes."""
+    return "".join(f"\\u{ord(c):04x}" if not " " <= c <= "~" or c in '"\\' else c for c in text)
+
+
+def price_table(provider="p", model="m", effective_from="2026-01-01", input_rate="1", output_rate="1",
+                url="https://example.com/p", as_of="2026-10-31", tier="A", extra=""):
+    """One-row TOML price table. Text values are real strings; they are escaped for TOML here."""
+    return (
+        "schema_version = 1\n[[price]]\n"
+        f'provider = "{toml_text(provider)}"\nmodel = "{toml_text(model)}"\n'
+        f"effective_from = {effective_from}\ninput_per_mtok = {input_rate}\noutput_per_mtok = {output_rate}\n"
+        f'source_url = "{toml_text(url)}"\nas_of = {as_of}\ntier = "{tier}"\n{extra}'
+    )
+
+
+def plain(text):
+    """True when the text holds only printable ASCII and newlines (what a terminal can show safely)."""
+    return all(c == "\n" or " " <= c <= "~" for c in text)
+
+
+class FileProblemsAreReportedNotRaised(unittest.TestCase):
+    """Review 1, finding 1: a bad input file is `error: cannot use ...` and exit code 1, no traceback."""
+
+    def check(self, code, out, err, fragment):
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(err.startswith("error: cannot use "), err)
+        self.assertIn(fragment, err)
+        self.assertNotIn("Traceback", err)
+
+    def test_a_price_file_that_is_not_utf8(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bad = Path(directory) / "p.toml"
+            bad.write_bytes(b"schema_version = 1\n# caf\xe9\n")
+            self.check(*run("report", CSV, "--prices", bad, "--today", TODAY), "not valid UTF-8")
+
+    def test_a_price_file_with_a_byte_order_mark_is_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bom = Path(directory) / "p.toml"
+            bom.write_bytes(b"\xef\xbb\xbf" + PRICES.read_bytes())
+            code, out, err = run("report", CSV, "--prices", bom, "--today", TODAY)
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("Requests: 7 read, 6 priced, 1 unpriced", out)
+
+    def test_an_integer_with_thousands_of_digits_in_csv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            huge = write(directory, "u.csv", "model,input_tokens,output_tokens\nm,1,1\nm," + "9" * 5000 + ",1\n")
+            code, out, err = run("report", huge, "--prices", PRICES, "--today", TODAY)
+        self.check(code, out, err, "line 3: input_tokens is too large")
+
+    def test_an_integer_with_thousands_of_digits_in_jsonl(self):
+        line = '{"model": "m", "input_tokens": 1, "output_tokens": ' + "9" * 5000 + "}\n"
+        with tempfile.TemporaryDirectory() as directory:
+            huge = write(directory, "u.jsonl", line)
+            code, out, err = run("report", huge, "--prices", PRICES, "--today", TODAY)
+        self.check(code, out, err, "line 1: output_tokens is too large")
+
+    def test_deeply_nested_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deep = write(directory, "u.jsonl", "[" * 200_000 + "\n")
+            code, out, err = run("report", deep, "--prices", PRICES, "--today", TODAY)
+        self.check(code, out, err, "line 1: JSON is nested too deeply")
+
+    def test_a_rate_that_would_overflow_the_arithmetic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prices = write(directory, "p.toml", price_table(input_rate="1e999999999"))
+            usage = write(directory, "u.csv", "model,input_tokens,output_tokens\nm,1000,1\n")
+            code, out, err = run("report", usage, "--prices", prices, "--today", TODAY)
+        self.check(code, out, err, "input_per_mtok must be at most 1,000,000")
+
+    def test_the_largest_allowed_rate_and_count_price_without_overflow(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prices = write(directory, "p.toml", price_table(input_rate="1000000", output_rate="1000000"))
+            usage = write(directory, "u.csv", f"model,input_tokens,output_tokens\nm,{10**15},{10**15}\n")
+            code, out, err = run("report", usage, "--prices", prices, "--today", TODAY)
+        self.assertEqual((code, err), (0, ""))
+        # 10^15 tokens x $1,000,000 per million = $10^15 each for input and output.
+        self.assertIn("$2,000,000,000,000,000.0000", out)
+
+
+class UntrustedTextIsEscaped(unittest.TestCase):
+    """Review 1, findings 2 and 3: file text reaches the terminal only as printable ASCII."""
+
+    NAME = "RED\x1b[31m\x1b]0;pwned\x07\u00e9\u8a9e"
+    SHOWN = "RED\\x1b[31m\\x1b]0;pwned\\x07\\xe9\\u8a9e"
+    URL = "https://example.com/\x1b[2J"
+    URL_SHOWN = "https://example.com/\\x1b[2J"
+
+    def test_an_unpriced_model_name_in_report_and_reprice(self):
+        with tempfile.TemporaryDirectory() as directory:
+            usage = write(
+                directory, "u.csv",
+                f'provider,model,input_tokens,output_tokens\npr\x1bov,"{self.NAME}",1,1\n',
+            )
+            for argv in (("report",), ("reprice", "--on", "2027-01-01")):
+                with self.subTest(argv=argv):
+                    code, out, err = run(argv[0], usage, "--prices", PRICES, "--today", TODAY, *argv[1:])
+                    self.assertEqual((code, err), (0, ""))
+                    self.assertTrue(plain(out), out)
+                    self.assertIn("pr\\x1bov / " + self.SHOWN, out)
+
+    def test_provider_and_model_in_warnings_and_labels(self):
+        first = price_table(provider=self.NAME, model=self.NAME, tier="C", as_of="2026-01-01", url=self.URL)
+        second = price_table(provider=self.NAME, model=self.NAME, effective_from="2027-01-01",
+                             tier="C", as_of="2026-01-01", url=self.URL)
+        table = first + second.replace("schema_version = 1\n", "")
+        with tempfile.TemporaryDirectory() as directory:
+            prices = write(directory, "p.toml", table)
+            usage = write(directory, "u.csv", f'model,input_tokens,output_tokens\n"{self.NAME}",1,1\n')
+            for command in ("report", "schedule", "reprice"):
+                with self.subTest(command=command):
+                    argv = [command, usage, "--prices", prices, "--today", TODAY]
+                    if command == "reprice":
+                        argv += ["--on", "2027-02-01"]
+                    code, out, err = run(*argv)
+                    self.assertEqual((code, err), (0, ""))
+                    self.assertTrue(plain(out), out)
+                    self.assertIn(self.SHOWN + " / " + self.SHOWN, out)
+                    self.assertIn("[stale]", out)  # the warning line carries the source URL
+                    self.assertIn(self.URL_SHOWN, out)
+
+    def test_problems_in_a_price_file_are_escaped_on_standard_error(self):
+        bad = price_table(provider=self.NAME, model="m", tier="Z", extra='"k\\u001b[2J\\u8a9e" = 1\n')
+        with tempfile.TemporaryDirectory() as directory:
+            prices = write(directory, "p.toml", bad)
+            code, out, err = run("report", CSV, "--prices", prices, "--today", TODAY)
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(plain(err), err)
+        self.assertIn(self.SHOWN, err)
+        self.assertIn("unknown key 'k\\x1b[2J\\u8a9e'", err)
+
+    def test_problems_in_a_usage_file_are_escaped_on_standard_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            usage = write(directory, "u.csv", "model,input_tokens,output_tokens\nm,\x1b]0;x\x07\u8a9e,1\n")
+            code, out, err = run("report", usage, "--prices", PRICES, "--today", TODAY)
+        self.assertEqual((code, out), (1, ""))
+        self.assertTrue(plain(err), err)
+        self.assertIn("\\x1b]0;x\\x07\\u8a9e", err)
+
+    def test_a_file_name_with_non_ascii_characters_is_escaped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            usage = write(directory, "us\u00e9\u8a9e.csv", "model,input_tokens,output_tokens\nm,1,1\n")
+            code, out, err = run("report", usage, "--prices", PRICES, "--today", TODAY)
+            missing = Path(directory) / "n\u00f6pe.csv"
+            code2, out2, err2 = run("report", missing, "--prices", PRICES, "--today", TODAY)
+        self.assertEqual((code, err), (0, ""))
+        self.assertTrue(plain(out), out)
+        self.assertIn("us\\xe9\\u8a9e.csv", out)
+        self.assertEqual((code2, out2), (1, ""))
+        self.assertTrue(plain(err2), err2)
+        self.assertIn("n\\xf6pe.csv", err2)
+
+    def test_plain_ascii_names_are_unchanged(self):
+        _, out, _ = run("report", CSV, "--prices", PRICES, "--today", TODAY)
+        self.assertIn("example-provider / model-a  (price row effective 2026-01-01, tier A)", out)
+        self.assertIn(f"REPORT: {CSV}", out)
+
+    def test_output_is_ascii_when_standard_output_cannot_hold_other_characters(self):
+        """Finding 3: with output redirected to an ASCII-only stream, a non-ASCII name must not crash."""
+        with tempfile.TemporaryDirectory() as directory:
+            usage = write(directory, "u.csv", "model,input_tokens,output_tokens\ncaf\u00e9 \u8a9e,1,1\n")
+            done = subprocess.run(
+                [sys.executable, "-m", "aicost.cli", "report", str(usage), "--prices", str(PRICES),
+                 "--today", TODAY],
+                capture_output=True,
+                env={**os.environ, "PYTHONIOENCODING": "ascii:strict"},
+            )
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(done.stderr, b"")
+        self.assertTrue(plain(done.stdout.decode("ascii").replace("\r", "")))
+        self.assertIn(b"caf\\xe9 \\u8a9e: 1 request", done.stdout)
+
+
+class CoverageOfBranchesNeverRun(unittest.TestCase):
+    """Lines 178, 225, and 262 of cli.py had no test (review 1, finding 12)."""
+
+    def test_banded_model_with_no_spend_has_no_share(self):
+        with tempfile.TemporaryDirectory() as directory:
+            usage = write(directory, "u.csv", "model,input_tokens,output_tokens\nmodel-a,0,0\n")
+            code, out, err = run("report", usage, "--prices", PRICES, "--today", TODAY)
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("  share of spend above the threshold: n/a (no spend)", out)
+
+    def schedule(self, first_rates, second_rates, band_change=False):
+        def row(effective_from, rates, threshold):
+            return (
+                f'[[price]]\nprovider = "p"\nmodel = "m"\neffective_from = {effective_from}\n'
+                f'threshold_tokens = {threshold}\nboundary = "under"\napplies_to = "marginal"\n'
+                f"input_per_mtok = {rates[0]}\noutput_per_mtok = {rates[1]}\n"
+                f"input_per_mtok_above = 9\noutput_per_mtok_above = 9\n"
+                'source_url = "https://example.com/p"\nas_of = 2026-10-31\ntier = "A"\n'
+            )
+
+        text = "schema_version = 1\n" + row("2026-01-01", first_rates, 100000) + row(
+            "2027-01-01", second_rates, 200000 if band_change else 100000
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            prices = write(directory, "p.toml", text)
+            usage = write(directory, "u.csv", "model,input_tokens,output_tokens\nm,1,1\n")
+            code, out, err = run("schedule", usage, "--prices", prices, "--today", TODAY)
+        self.assertEqual((code, err), (0, ""))
+        return out
+
+    def test_a_rate_that_goes_from_zero_to_non_zero(self):
+        out = self.schedule((0, 0), (1, 0))
+        self.assertIn("change in lower-band rates: input new non-zero rate, output n/a", out)
+
+    def test_a_band_rule_that_changes(self):
+        out = self.schedule((1, 1), (1, 1), band_change=True)
+        self.assertIn("the band rule itself changes; compare the two rows in the price table", out)
+        self.assertNotIn("the band rule itself changes", self.schedule((1, 1), (2, 2)))
 
 
 if __name__ == "__main__":
