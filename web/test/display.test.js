@@ -32,9 +32,13 @@ function run(options) {
     ['contrast', 'high'], ['font', 'standard'], ['font', 'atkinson']]
     .forEach(([o, v]) => buttons.push(fakeButton(o, v)));
   const listeners = {};
+  // lateButtons: the script runs in the head, before the buttons are parsed (document.readyState is
+  // 'loading'); the buttons appear when the test calls domReady().
+  let buttonsParsed = !opts.lateButtons;
   const document = {
     documentElement: root,
-    querySelectorAll: (selector) => (selector === '[data-display-option]' ? buttons : []),
+    readyState: opts.lateButtons ? 'loading' : 'complete',
+    querySelectorAll: (selector) => (selector === '[data-display-option]' && buttonsParsed ? buttons : []),
     addEventListener: (type, fn) => { listeners[type] = fn; }
   };
   const store = {};
@@ -67,7 +71,11 @@ function run(options) {
   const pressed = () => buttons.filter((b) => b.getAttribute('aria-pressed') === 'true')
     .map((b) => b.dataset.displayOption + '=' + b.dataset.value);
   const click = (target) => listeners.click({ target });
-  return { root, buttons, store, calls, pressed, click, listeners };
+  const domReady = () => {
+    buttonsParsed = true;
+    if (listeners.DOMContentLoaded) { listeners.DOMContentLoaded(); }
+  };
+  return { root, buttons, store, calls, pressed, click, listeners, domReady };
 }
 
 test('first visit: system theme, standard contrast, standard font, nothing stored', () => {
@@ -160,4 +168,38 @@ test('clicks that are not on a valid option change nothing', () => {
   page.click(fakeButton('size', 'big'));
   assert.strictEqual(JSON.stringify(page.root.attrs), before);
   assert.strictEqual(page.calls.set, 0);
+});
+
+// Code review 1, finding 8: display.js loads in the head, before the buttons exist. The choice
+// must reach <html> at once (before the first paint), and aria-pressed must follow when the page
+// has been parsed.
+test('run in the head: the saved choice is on <html> at once and the buttons catch up later', () => {
+  const saved = JSON.stringify({ theme: 'dark', font: 'atkinson', contrast: 'high' });
+  const page = run({ storage: saved, lateButtons: true });
+  assert.deepStrictEqual(page.root.attrs, { 'data-theme': 'dark', 'data-font': 'atkinson', 'data-contrast': 'high' });
+  assert.deepStrictEqual(page.pressed(), [], 'no button exists yet');
+  assert.strictEqual(typeof page.listeners.DOMContentLoaded, 'function');
+  page.domReady();
+  assert.deepStrictEqual(page.pressed().sort(), ['contrast=high', 'font=atkinson', 'theme=dark']);
+});
+
+test('run in the head: a click after the page is parsed still works and is remembered', () => {
+  const page = run({ lateButtons: true });
+  page.domReady();
+  page.click(page.buttons.filter((b) => b.dataset.value === 'light')[0]);
+  assert.strictEqual(page.root.attrs['data-theme'], 'light');
+  assert.deepStrictEqual(JSON.parse(page.store['display-options']),
+    { theme: 'light', font: 'standard', contrast: 'standard' });
+});
+
+test('run in the head with storage blocked: the defaults apply and the page still starts', () => {
+  const page = run({ storage: 'blocked', lateButtons: true });
+  assert.strictEqual(page.root.attrs['data-theme'], 'system');
+  page.domReady();
+  assert.ok(page.pressed().indexOf('theme=system') !== -1);
+});
+
+test('run after the page is parsed: no extra listener is needed', () => {
+  const page = run();
+  assert.strictEqual(page.listeners.DOMContentLoaded, undefined);
 });

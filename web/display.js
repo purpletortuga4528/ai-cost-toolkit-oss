@@ -1,6 +1,10 @@
 // Display options: theme, contrast, and font. A classic script (no modules, so it works from a
 // local file). It makes no network request. It stores one key, "display-options", holding the
 // three choices, and the page works with storage blocked.
+//
+// The page loads this script in the head, so the saved choices are set on <html> before the
+// first paint. The buttons are not parsed yet at that point, so their aria-pressed state is set
+// again once the page has been parsed.
 (function () {
   var KEY = 'display-options';
   var root = document.documentElement;
@@ -38,4 +42,5 @@
   });
 
   apply();
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', apply); }
 })();

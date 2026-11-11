@@ -2,9 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Self-host versus API cost calculator</title>
 <link rel="stylesheet" href="display.css">
+<script src="display.js"></script>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -12,7 +14,10 @@
     font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   }
   main { max-width: 64rem; margin: 0 auto; min-width: 0; }
-  p, li, td, th, a, label, .hint, caption { overflow-wrap: anywhere; }
+  p, li, a, label, .hint, caption { overflow-wrap: anywhere; }
+  /* In tables, break-word (not anywhere): a column may not shrink below its longest word, so a narrow
+     screen scrolls the table sideways inside .scroll instead of breaking words mid-word. */
+  td, th, td a, th a { overflow-wrap: break-word; }
   h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
   h2 { font-size: 1.25rem; margin: 0 0 .5rem; }
   h3 { font-size: 1.05rem; margin: 1rem 0 .25rem; }
@@ -41,6 +46,9 @@
   ul.plain { margin: .25rem 0 .25rem 1.25rem; padding: 0; }
   button { font: inherit; padding: .4rem .8rem; border: 1px solid var(--fg); border-radius: .25rem; background: var(--panel); color: var(--fg); cursor: pointer; }
   [aria-pressed="true"] { background: var(--pressed-bg); color: var(--pressed-fg); font-weight: 700; }
+  @media (forced-colors: active) {
+    [aria-pressed="true"] { border-style: double; border-width: 4px; }
+  }
   .display-options { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; align-items: flex-start; }
   .display-options .group { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
   .display-options .group-name { font-weight: 600; }
@@ -50,6 +58,7 @@
 </style>
 </head>
 <body>
+<noscript><p class="error">This calculator needs JavaScript to run, and JavaScript is turned off or blocked in this browser. Turn it on for this page to use the calculator.</p></noscript>
 <main>
   <header>
     <h1>Self-host versus API cost calculator</h1>
@@ -157,7 +166,7 @@
         <p class="hint" id="o-u-hint">A number above 0 and up to 1. There is no default: the answer depends on it.</p>
       </div>
     </div>
-    <div id="o-results" aria-live="polite"></div>
+    <div id="o-results"></div>
   </section>
 
   <section aria-labelledby="sens-title">
@@ -180,7 +189,7 @@
         <p class="hint" id="s-years-hint"></p>
       </div>
     </div>
-    <div id="s-results" aria-live="polite"></div>
+    <div id="s-results"></div>
   </section>
 
   <section aria-labelledby="metered-title">
@@ -197,7 +206,7 @@
         <input id="m-tps" type="number" step="any" min="0" inputmode="decimal">
       </div>
     </div>
-    <div id="m-results" aria-live="polite"></div>
+    <div id="m-results"></div>
   </section>
 
   <section aria-labelledby="committed-title">
@@ -219,7 +228,7 @@
         <p class="hint" id="c-u-hint">A number above 0 and up to 1.</p>
       </div>
     </div>
-    <div id="c-results" aria-live="polite"></div>
+    <div id="c-results"></div>
   </section>
 
   <section aria-labelledby="sources-title">
@@ -237,7 +246,6 @@
     </ul>
   </section>
 </main>
-<script src="display.js"></script>
 <script src="model.js"></script>
 <script src="presets.js"></script>
 <script src="ui.js"></script>

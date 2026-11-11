@@ -105,7 +105,7 @@
     if (Object.prototype.hasOwnProperty.call(NAMES, first)) {
       return NAMES[first] + message.slice(first.length);
     }
-    return message;
+    return message.charAt(0).toUpperCase() + message.slice(1);
   }
 
   function showError(container, message) {
@@ -114,6 +114,34 @@
     box.setAttribute('role', 'alert');
     box.appendChild(el('p', friendly(message) + '.'));
     container.appendChild(box);
+  }
+
+  // A problem in one part of a panel (a break-even that cannot be calculated): shown inside the
+  // panel, next to the parts that did work.
+  function showPartProblem(container, what, error) {
+    var box = el('div', null, 'error');
+    box.appendChild(el('p', what + ' could not be calculated: ' + error.message + '.'));
+    container.appendChild(box);
+  }
+
+  // Runs one panel's render. If it throws, the panel shows the error (as an alert) and the
+  // panels after it still render, so none is left showing numbers from an earlier input.
+  // `alsoClear` names panels that depend on this one and must not keep old content.
+  function safely(id, render, alsoClear) {
+    try {
+      render();
+    } catch (error) {
+      showError(byId(id), error.message);
+      (alsoClear || []).forEach(function (other) { clear(byId(other)); });
+    }
+  }
+
+  // The metered cost as a multiple of the API price, as text. A multiple that is not finite or
+  // too large for toFixed (1e21) is not shown as a number.
+  function ratioText(cost, api) {
+    var ratio = cost / api;
+    if (!isFinite(ratio) || ratio >= 1e21) { return null; }
+    return plain(ratio, 2);
   }
 
   function apiPrice() {
@@ -337,7 +365,7 @@
     var lowU = range.pEqualsU;
     var highP = range.pEqualsOne;
     out.appendChild(table('Cost per million output tokens, owned hardware (floor)',
-      ['', 'p = u (powered only while producing)', 'p = 1 (powered all year)'],
+      ['Quantity', 'p = u (powered only while producing)', 'p = 1 (powered all year)'],
       [['Cost per million output tokens', dollars(lowU.costPerMtok), dollars(highP.costPerMtok)],
        ['Energy cost per year', dollars(lowU.energyCostPerYear), dollars(highP.energyCostPerYear)],
        ['Energy, kWh per year', grouped(lowU.energyKWhPerYear), grouped(highP.energyKWhPerYear)]],
@@ -352,8 +380,14 @@
       var rows = [];
       [['powered only while producing (p = u)', 'equalsU'], ['powered all year (p = 1)', 'always']]
         .forEach(function (pair) {
-          var be = ownedBreakEven(Object.assign({ apiPricePerMtok: api, powered: pair[1] }, withoutUtilization(inputs)));
+          var be;
           var text;
+          try {
+            be = ownedBreakEven(Object.assign({ apiPricePerMtok: api, powered: pair[1] }, withoutUtilization(inputs)));
+          } catch (error) {
+            rows.push([pair[0], 'cannot be calculated: ' + error.message]);
+            return;
+          }
           if (be.utilization === null) {
             text = 'none: the API price is at or below the energy cost per token';
           } else if (be.reachable) {
@@ -385,25 +419,11 @@
     { axis: 'amortizationYears', input: 's-years', hint: 's-years-hint', title: 'Amortization, years', format: function (v) { return String(v); } }
   ];
 
-  function parseList(text) {
-    var parts = text.split(',');
-    var values = [];
-    for (var i = 0; i < parts.length; i += 1) {
-      var piece = parts[i].trim();
-      if (piece === '') { continue; }
-      var value = Number(piece);
-      if (!isFinite(value)) { return { error: '"' + piece + '" is not a number' }; }
-      values.push(value);
-    }
-    if (values.length === 0) { return { error: 'enter at least one value' }; }
-    return { values: values };
-  }
-
   function renderSensitivity(inputs) {
     var out = byId('s-results');
     clear(out);
     STRIP_AXES.forEach(function (axis) {
-      var parsed = parseList(byId(axis.input).value);
+      var parsed = parseValueList(byId(axis.input).value);
       if (parsed.error) {
         var box = el('div', null, 'error');
         box.appendChild(el('p', axis.title + ': ' + parsed.error + '.'));
@@ -416,6 +436,10 @@
         });
         out.appendChild(table(axis.title + ': cost per million output tokens (floor)',
           [axis.title, 'p = u', 'p = 1'], rows, 1));
+        if (parsed.truncated) {
+          out.appendChild(el('p', axis.title + ': only the first ' + MAX_SENSITIVITY_VALUES +
+            ' values are used; the rest of the list is ignored.', 'muted'));
+        }
       } catch (error) {
         var errBox = el('div', null, 'error');
         errBox.appendChild(el('p', axis.title + ': ' + friendly(error.message) + '.'));
@@ -449,13 +473,19 @@
     }
     clear(out);
     out.appendChild(table('Metered rental',
-      ['', 'Value'],
+      ['Quantity', 'Value'],
       [['Cost per million output tokens', dollars(result.costPerMtok)],
        ['Depends on utilization?', 'No']], 1));
     var api = apiPrice();
     if (api !== null) {
-      out.appendChild(el('p', 'This is ' + plain(result.costPerMtok / api, 2) + ' times the API price you entered (' +
-        dollars(api) + ' per million output tokens). A metered rental has no break-even utilization.'));
+      var times = ratioText(result.costPerMtok, api);
+      if (times === null) {
+        out.appendChild(el('p', 'The API price you entered (' + api + ' per million output tokens) is too small to ' +
+          'compare with: the ratio is too large to show. A metered rental has no break-even utilization.'));
+      } else {
+        out.appendChild(el('p', 'This is ' + times + ' times the API price you entered (' +
+          dollars(api) + ' per million output tokens). A metered rental has no break-even utilization.'));
+      }
     } else {
       apiPriceNote(out);
     }
@@ -475,21 +505,28 @@
     }
     clear(out);
     out.appendChild(table('Committed rental',
-      ['', 'Value'],
+      ['Quantity', 'Value'],
       [['Cost per million output tokens at u = ' + collected.values.u, dollars(result.costPerMtok)],
        ['Cost at u = 1 (fully used)', dollars(meteredCost(collected.values).costPerMtok)]], 1));
     var api = apiPrice();
     if (api !== null) {
-      var be = committedBreakEven({
-        hourlyRate: collected.values.hourlyRate,
-        throughputPerAccelerator: collected.values.throughputPerAccelerator,
-        apiPricePerMtok: api
-      });
-      var text = be.reachable
-        ? 'Break-even utilization against ' + dollars(api) + ': u = ' + plain(be.utilization, 3) + '.'
-        : 'Break-even against ' + dollars(api) + ' is not reachable: it would need u = ' +
-          plain(be.utilization, 3) + ', above 1, so a fully used committed rental still costs more than the API price.';
-      out.appendChild(el('p', text));
+      var be = null;
+      try {
+        be = committedBreakEven({
+          hourlyRate: collected.values.hourlyRate,
+          throughputPerAccelerator: collected.values.throughputPerAccelerator,
+          apiPricePerMtok: api
+        });
+      } catch (error) {
+        showPartProblem(out, 'Break-even', error);
+      }
+      if (be !== null) {
+        var text = be.reachable
+          ? 'Break-even utilization against ' + dollars(api) + ': u = ' + plain(be.utilization, 3) + '.'
+          : 'Break-even against ' + dollars(api) + ' is not reachable: it would need u = ' +
+            plain(be.utilization, 3) + ', above 1, so a fully used committed rental still costs more than the API price.';
+        out.appendChild(el('p', text));
+      }
     } else {
       apiPriceNote(out);
     }
@@ -499,10 +536,10 @@
   // ---- start-up ----------------------------------------------------------------------------
 
   function renderAll() {
-    renderStaleBanner();
-    renderOwned();
-    renderMetered();
-    renderCommitted();
+    safely('stale-banner', renderStaleBanner);
+    safely('o-results', renderOwned, ['s-results']);
+    safely('m-results', renderMetered);
+    safely('c-results', renderCommitted);
   }
 
   function init() {

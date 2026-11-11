@@ -30,6 +30,17 @@ function requireFiniteNumber(inputs, name) {
   return value;
 }
 
+// A result that is not a finite number is refused, not shown: Infinity or NaN would print as
+// "$Infinity" or "$NaN", and an overflow that leaves tokens per year at Infinity would print a
+// cost of $0. The page shows the RangeError's message instead.
+var OUT_OF_RANGE = 'the result is too large or too small for this page to calculate; ' +
+  'check the inputs for an extreme value';
+
+function requireFiniteResult(value) {
+  if (typeof value !== 'number' || !isFinite(value)) { throw new RangeError(OUT_OF_RANGE); }
+  return value;
+}
+
 // Checks every input and returns the numbers. Throws TypeError for a missing or non-numeric
 // input and RangeError for a number outside its range. p has no default: the paper warns that
 // assuming p = u is "the most favorable assumption available and is never true", so the caller
@@ -70,9 +81,13 @@ function ownedCost(inputs) {
   var v = validateOwnedInputs(inputs);
   var tokensPerYear = v.throughputPerAccelerator * v.accelerators *
     SECONDS_PER_HOUR * HOURS_PER_YEAR * v.u;
-  var capitalPerYear = v.unitPrice * v.accelerators / v.amortizationYears;
-  var energyKWhPerYear = v.tdpWatts * v.accelerators / 1000 * HOURS_PER_YEAR * v.p;
-  var energyCostPerYear = energyKWhPerYear * v.tariff * v.pue;
+  if (!isFinite(tokensPerYear) || tokensPerYear <= 0) {
+    throw new RangeError('tokens per year must be above 0 and small enough to calculate; ' +
+      'check the throughput, the number of accelerators, and u');
+  }
+  var capitalPerYear = requireFiniteResult(v.unitPrice * v.accelerators / v.amortizationYears);
+  var energyKWhPerYear = requireFiniteResult(v.tdpWatts * v.accelerators / 1000 * HOURS_PER_YEAR * v.p);
+  var energyCostPerYear = requireFiniteResult(energyKWhPerYear * v.tariff * v.pue);
   return {
     label: 'floor',
     inputs: v,
@@ -80,7 +95,7 @@ function ownedCost(inputs) {
     capitalPerYear: capitalPerYear,
     energyKWhPerYear: energyKWhPerYear,
     energyCostPerYear: energyCostPerYear,
-    costPerMtok: 1e6 * (capitalPerYear + energyCostPerYear) / tokensPerYear
+    costPerMtok: requireFiniteResult(1e6 * (capitalPerYear + energyCostPerYear) / tokensPerYear)
   };
 }
 
@@ -130,7 +145,7 @@ function validateRentalInputs(inputs) {
 }
 
 function rentalCostAtFullUse(v) {
-  return 1e6 * v.hourlyRate / (v.throughputPerAccelerator * SECONDS_PER_HOUR);
+  return requireFiniteResult(1e6 * v.hourlyRate / (v.throughputPerAccelerator * SECONDS_PER_HOUR));
 }
 
 // Metered rental, dollars per million output tokens. Takes no utilization: any u passed in the
@@ -145,7 +160,7 @@ function committedCost(inputs) {
   var v = validateRentalInputs(inputs);
   v.u = requireFiniteNumber(inputs, 'u');
   if (v.u <= 0 || v.u > 1) { throw new RangeError('u must be greater than 0 and at most 1'); }
-  return { label: 'committed', inputs: v, costPerMtok: rentalCostAtFullUse(v) / v.u };
+  return { label: 'committed', inputs: v, costPerMtok: requireFiniteResult(rentalCostAtFullUse(v) / v.u) };
 }
 
 function requireApiPrice(inputs) {
@@ -161,7 +176,7 @@ function requireApiPrice(inputs) {
 function committedBreakEven(inputs) {
   var v = validateRentalInputs(inputs);
   var api = requireApiPrice(inputs);
-  var utilization = rentalCostAtFullUse(v) / api;
+  var utilization = requireFiniteResult(rentalCostAtFullUse(v) / api);
   return { label: 'committed', utilization: utilization, reachable: utilization <= 1 };
 }
 
@@ -192,8 +207,8 @@ function ownedBreakEven(inputs) {
   atFullUse.u = 1;
   atFullUse.p = 1;
   var full = ownedCost(atFullUse);
-  var capital = 1e6 * full.capitalPerYear / full.tokensPerYear;
-  var energy = 1e6 * full.energyCostPerYear / full.tokensPerYear;
+  var capital = requireFiniteResult(1e6 * full.capitalPerYear / full.tokensPerYear);
+  var energy = requireFiniteResult(1e6 * full.energyCostPerYear / full.tokensPerYear);
 
   var utilization;
   if (inputs.powered === 'always') {
@@ -203,6 +218,7 @@ function ownedBreakEven(inputs) {
   } else {
     utilization = null;
   }
+  if (utilization !== null) { requireFiniteResult(utilization); }
   return {
     label: 'floor',
     powered: inputs.powered,
@@ -218,6 +234,36 @@ function ownedBreakEven(inputs) {
 // value the model rejects throws, as ownedCostRange does.
 var SENSITIVITY_AXES = ['pue', 'tariff', 'amortizationYears'];
 
+// The most values one sensitivity list may hold. The shipped defaults have three; 20 rows is a
+// table a person can read, and it bounds the work done on every keystroke.
+var MAX_SENSITIVITY_VALUES = 20;
+
+// Reads a comma-separated list typed or pasted into a sensitivity box. Returns
+// { values, truncated } (at most `max` numbers; truncated is true when more were left out) or
+// { error: text } for the first piece that is not a number, or when there is none. It stops
+// reading after the first value past the limit, so a huge pasted list costs one pass and no more.
+function parseValueList(text, max) {
+  var limit = max === undefined ? MAX_SENSITIVITY_VALUES : max;
+  var source = String(text);
+  var values = [];
+  var start = 0;
+  while (start <= source.length) {
+    var end = source.indexOf(',', start);
+    if (end === -1) { end = source.length; }
+    var piece = source.slice(start, end).trim();
+    start = end + 1;
+    if (piece === '') { continue; }
+    var value = Number(piece);
+    if (!isFinite(value)) {
+      return { error: '"' + (piece.length > 30 ? piece.slice(0, 30) + '...' : piece) + '" is not a number' };
+    }
+    if (values.length === limit) { return { values: values, truncated: true }; }
+    values.push(value);
+  }
+  if (values.length === 0) { return { error: 'enter at least one value' }; }
+  return { values: values, truncated: false };
+}
+
 function sensitivityStrip(inputs, axis, values) {
   if (inputs === null || typeof inputs !== 'object') {
     throw new TypeError('inputs must be an object');
@@ -227,6 +273,9 @@ function sensitivityStrip(inputs, axis, values) {
   }
   if (!Array.isArray(values)) { throw new TypeError('values must be an array'); }
   if (values.length === 0) { throw new RangeError('values must not be empty'); }
+  if (values.length > MAX_SENSITIVITY_VALUES) {
+    throw new RangeError('values must have at most ' + MAX_SENSITIVITY_VALUES + ' entries');
+  }
   return values.map(function (value) {
     var copy = {};
     Object.keys(inputs).forEach(function (key) { copy[key] = inputs[key]; });
@@ -247,6 +296,8 @@ if (typeof module !== 'undefined' && module.exports) {
     committedCost: committedCost,
     committedBreakEven: committedBreakEven,
     ownedBreakEven: ownedBreakEven,
-    sensitivityStrip: sensitivityStrip
+    sensitivityStrip: sensitivityStrip,
+    MAX_SENSITIVITY_VALUES: MAX_SENSITIVITY_VALUES,
+    parseValueList: parseValueList
   };
 }
