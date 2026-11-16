@@ -201,6 +201,95 @@ test('the pressed state of a display-option button is shown by color pair and we
   assert.match(rule[1], /font-weight:\s*700/);
 });
 
+// ---- high contrast adds structure, not only color (session 18) ------------------------------
+// Standard light is already very high in contrast, so a color-only change cannot be seen. High
+// contrast therefore also changes structure: thicker borders, no gray panel fill, a thicker focus
+// ring. The rules sit in the page's inline style under :root[data-contrast="high"] (no data-theme,
+// so they apply to light and dark alike) and take every color from the tokens.
+const HC = ':root[data-contrast="high"]';
+// The inline style without its @media blocks (nested braces), and the @media blocks alone.
+const mediaBlocks = stripComments(inlineStyle).match(/@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g) || [];
+const flatStyle = mediaBlocks.reduce((s, m) => s.replace(m, ''), stripComments(inlineStyle));
+const flatRules = blocks(flatStyle).map((b) => ({ selectors: b.selector.split(',').map((s) => s.replace(/\s+/g, ' ').trim()), body: b.body }));
+function declaration(body, property) {
+  const m = new RegExp('(?:^|[;\\s])' + property + '\\s*:\\s*([^;]+)').exec(body);
+  return m ? m[1].trim() : null;
+}
+// The value a high-contrast rule gives `property` to `target` (a selector without the prefix).
+function highValue(target, property) {
+  const rule = flatRules.filter((r) => r.selectors.indexOf(HC + ' ' + target) !== -1 && declaration(r.body, property) !== null)[0];
+  return rule ? declaration(rule.body, property) : null;
+}
+// The value a standard rule (no :root prefix) gives `property` to `target`.
+function standardValue(target, property) {
+  const rule = flatRules.filter((r) => r.selectors.indexOf(target) !== -1 && declaration(r.body, property) !== null)[0];
+  return rule ? declaration(rule.body, property) : null;
+}
+
+test('high contrast: sections, notice, table cells, fields, and buttons get 2px borders; standard stays 1px', () => {
+  for (const target of ['section', 'th', 'td', 'button', '.field input', '.field select']) {
+    assert.strictEqual(highValue(target, 'border-width'), '2px', 'high contrast border on ' + target);
+  }
+  // Standard contrast is unchanged: the 1px borders that were there before.
+  assert.match(standardValue('section', 'border'), /^1px solid var\(--border\)$/);
+  assert.match(standardValue('td', 'border'), /^1px solid var\(--border\)$/);
+  assert.match(standardValue('button', 'border'), /^1px solid var\(--fg\)$/);
+  assert.match(standardValue('.field input', 'border'), /^1px solid var\(--field-border\)$/);
+});
+
+test('high contrast: warnings and errors keep a heavier border than sections (3px against 2px)', () => {
+  assert.strictEqual(highValue('.warn', 'border-width'), '3px');
+  assert.strictEqual(highValue('.error', 'border-width'), '3px');
+  assert.match(standardValue('.warn', 'border'), /^2px solid var\(--warn-border\)$/);
+  assert.match(standardValue('.error', 'border'), /^2px solid var\(--error-border\)$/);
+});
+
+test('high contrast: the notice, table headings, and unpressed buttons use the page background, not the gray panel fill', () => {
+  for (const target of ['.notice', 'th', 'button:not([aria-pressed="true"])']) {
+    assert.strictEqual(highValue(target, 'background'), 'var(--bg)', target);
+  }
+  // Standard contrast keeps the panel fill.
+  assert.strictEqual(standardValue('.notice', 'background'), 'var(--panel)');
+  assert.strictEqual(standardValue('th', 'background'), 'var(--panel)');
+  assert.strictEqual(standardValue('button', 'background'), 'var(--panel)');
+});
+
+test('high contrast: a pressed button keeps its inverse fill (no high rule recolors it)', () => {
+  const recolors = flatRules.filter((r) => r.selectors.some((s) => s.indexOf(HC) === 0 && /(^|\s)button$/.test(s)) &&
+    declaration(r.body, 'background') !== null);
+  assert.deepStrictEqual(recolors, [], 'a high-contrast rule sets the background of every button, pressed ones included');
+});
+
+test('high contrast: the focus ring is thicker than the standard 3px', () => {
+  const width = highValue(':focus-visible', 'outline-width');
+  assert.match(width || '', /^\d+px$/, 'no outline-width in high contrast');
+  assert.ok(parseInt(width, 10) >= 4, 'focus ring is ' + width);
+  assert.match(highValue(':focus-visible', 'outline-offset') || '', /^\d+px$/);
+});
+
+test('high contrast: every structure rule is under data-contrast and none names a theme', () => {
+  const high = flatRules.filter((r) => r.selectors.some((s) => s.indexOf('data-contrast') !== -1));
+  assert.ok(high.length >= 4, 'expected the high-contrast structure rules, found ' + high.length);
+  for (const r of high) {
+    for (const s of r.selectors) {
+      assert.ok(s.indexOf(HC + ' ') === 0, 'selector does not start with ' + HC + ': ' + s);
+      assert.ok(s.indexOf('data-theme') === -1, 'a theme in a high-contrast structure rule: ' + s);
+    }
+  }
+});
+
+test('high contrast: the pressed border in forced-colors mode stays double and 4px', () => {
+  const forced = mediaBlocks.filter((m) => /forced-colors:\s*active/.test(m)).join('\n');
+  assert.match(forced, /\[aria-pressed="true"\]\s*\{[^}]*border-style:\s*double;\s*border-width:\s*4px/);
+  assert.match(forced, new RegExp(HC.replace(/[[\]"]/g, '\\$&') + '\\s*\\[aria-pressed="true"\\]\\s*\\{[^}]*border-width:\\s*4px'),
+    'the 2px high-contrast button border would override the forced-colors border');
+});
+
+test('links are never turned off: no rule removes the underline', () => {
+  const css = stripComments(inlineStyle) + stripComments(displayCss);
+  assert.ok(!/text-decoration(-line)?\s*:\s*none/.test(css), 'a rule removes an underline');
+});
+
 test('the page declares a language and a title, and scales on small screens', () => {
   assert.match(html, /<html lang="en">/);
   assert.match(html, /<title>[^<]+<\/title>/);

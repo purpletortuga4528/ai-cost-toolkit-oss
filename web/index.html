@@ -55,6 +55,25 @@
   details { margin: .5rem 0; }
   summary { cursor: pointer; font-weight: 600; }
   code { background: var(--panel); padding: 0 .2rem; border-radius: .2rem; }
+  /* High contrast adds structure, not only color. Standard light is already very high in
+     contrast, so a color change alone cannot be seen. These rules apply to light and dark alike
+     (no data-theme) and take every color from the tokens. Links need no rule: the browser
+     underlines them and a test checks nothing removes it. */
+  :root[data-contrast="high"] section,
+  :root[data-contrast="high"] th,
+  :root[data-contrast="high"] td,
+  :root[data-contrast="high"] button,
+  :root[data-contrast="high"] .field input,
+  :root[data-contrast="high"] .field select { border-width: 2px; }
+  :root[data-contrast="high"] .warn,
+  :root[data-contrast="high"] .error { border-width: 3px; }
+  :root[data-contrast="high"] .notice,
+  :root[data-contrast="high"] th,
+  :root[data-contrast="high"] button:not([aria-pressed="true"]) { background: var(--bg); }
+  :root[data-contrast="high"] :focus-visible { outline-width: 4px; outline-offset: 3px; }
+  @media (forced-colors: active) {
+    :root[data-contrast="high"] [aria-pressed="true"] { border-style: double; border-width: 4px; }
+  }
 </style>
 </head>
 <body>
