@@ -2,6 +2,8 @@
 
 A command-line tool that reads your own API usage export and shows what share of your spend sits above each provider's long-context price threshold, which of your models have a scheduled price change, and what the same usage would cost on a future date. Version 0.1.0 (in development, not yet released).
 
+The `web/` folder holds a self-host versus API cost calculator planned for a later release. It is work in progress: it is not part of version 0.1.0, it has not been released, and it has not been tested with a screen reader.
+
 ## What it does
 - Reads a usage export, CSV or JSON Lines, with one row per request. Required fields: `model`, `input_tokens`, and `output_tokens`. Optional: `provider`. Other columns are ignored. Token counts must be whole numbers, zero or more and at most 1,000,000,000,000,000.
 - Reads a price table (TOML) with, for each row: provider, model, band threshold, boundary rule (at or below, or under), whether the upper band prices the whole request or only the tokens beyond the threshold, rates per band, effective-from date, source URL, as-of date, tier, and shelf life in days (30 by default).
