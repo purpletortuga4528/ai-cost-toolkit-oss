@@ -131,6 +131,19 @@ class Rejections(unittest.TestCase):
             with self.subTest(key=key):
                 self.check("schema_version = 1\n" + ROW + f"{key} = " + "9" * 5000 + "\n", "could not be read")
 
+    def test_an_exponent_too_large_to_read_is_a_problem_not_a_crash(self):
+        # Review 5, finding 2: tomllib hands the text to Decimal, which raises InvalidOperation
+        # (an ArithmeticError, not a ValueError) when the exponent is beyond its limits.
+        for value in ("1e1000000000000000000000", "1e-1000000000000000000000", "0e1000000000000000000000"):
+            for key, old in (("input_per_mtok", "0.1"), ("output_per_mtok", "0.2")):
+                with self.subTest(value=value, key=key):
+                    text = "schema_version = 1\n" + ROW.replace(f"{key} = {old}", f"{key} = {value}")
+                    self.check(text, "a value could not be read")
+
+    def test_a_large_but_legal_exponent_is_still_a_rate_problem(self):
+        text = "schema_version = 1\n" + ROW.replace("input_per_mtok = 0.1", "input_per_mtok = 1e999999999999999999")
+        self.check(text, "input_per_mtok must be at most 1,000,000 dollars per million tokens")
+
     def test_a_key_name_is_escaped_in_the_problem_text(self):
         text = 'schema_version = 1\n"bad\\u001b[2Jk\\u00e9y" = 1\n' + ROW
         with self.assertRaises(PriceTableError) as raised:

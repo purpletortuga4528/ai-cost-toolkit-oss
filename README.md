@@ -24,7 +24,7 @@ Options shared by all three commands:
 Example, on a made-up three-request export (`tests/fixtures/seed_usage.csv`), trimmed:
 
 ```text
-$ aicost report seed_usage.csv --today 2026-10-31
+$ aicost report seed_usage.csv --today 2026-11-16
 anthropic / claude-haiku-5-5  (price row effective 2026-10-31, tier A)
   band: threshold 100,000 input tokens; a request at exactly the threshold stays in the lower band; the upper band prices the whole request
   rates, $ per 1M tokens: input $0.10 / $0.50, output $0.50 / $2.50 (lower / upper band)
