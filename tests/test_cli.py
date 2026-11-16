@@ -43,7 +43,7 @@ JSONL = FIXTURES / "cli_usage.jsonl"
 SEED_PRICES = Path(__file__).resolve().parents[1] / "src" / "aicost" / "data" / "prices.toml"
 SEED_USAGE = FIXTURES / "seed_usage.csv"
 TODAY = "2026-10-31"
-SEED_TODAY = "2026-11-01"  # the seed table holds rows read on 2026-11-01
+SEED_TODAY = "2026-11-16"  # the seed table holds rows read on 2026-11-16
 
 
 def run(*argv):
@@ -490,7 +490,7 @@ class SeedPrices(unittest.TestCase):
     def test_schedule_finds_the_january_1_2027_change(self):
         code, out, _ = run("schedule", SEED_USAGE, "--prices", SEED_PRICES, "--today", SEED_TODAY)
         self.assertEqual(code, 0)
-        self.assertIn("2027-01-01  google / gemini-3.8-flash  (in 61 days)", out)
+        self.assertIn("2027-01-01  google / gemini-3.8-flash  (in 46 days)", out)
 
     def test_reprice_runs_on_the_seed_prices(self):
         code, out, err = run(
