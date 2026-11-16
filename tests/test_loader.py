@@ -42,6 +42,22 @@ class Loading(unittest.TestCase):
         # The same row with applies_to added is valid.
         self.assertEqual(len(parse_price_table(text + 'applies_to = "marginal"\n', TODAY)), 1)
 
+    def test_a_banded_row_can_be_followed_by_single_band_rows(self):
+        """A scheduled change may drop the band rule (gemini-2.5-pro moves to Flash's single
+        band on 2026-12-01). The loader accepts it and keeps all three rows in date order."""
+        banded = (
+            'threshold_tokens = 200000\nboundary = "at_or_below"\napplies_to = "whole_request"\n'
+            "input_per_mtok_above = 2.5\noutput_per_mtok_above = 15\n"
+        )
+        later = ROW.replace("2026-01-01", "2026-12-01").replace("0.1", "0.75").replace("0.2", "3.75")
+        latest = ROW.replace("2026-01-01", "2027-01-01").replace("0.1", "1.50").replace("0.2", "7.50")
+        text = "schema_version = 1\n" + ROW + banded + later + latest
+        rows = parse_price_table(text, TODAY)
+        self.assertEqual([r.effective_from.isoformat() for r in rows], ["2026-01-01", "2026-12-01", "2027-01-01"])
+        self.assertEqual([r.threshold_tokens for r in rows], [200000, None, None])
+        self.assertEqual([r.input_per_mtok_above for r in rows], [Decimal("2.5"), None, None])
+        self.assertEqual([r.input_per_mtok for r in rows], [Decimal("0.1"), Decimal("0.75"), Decimal("1.50")])
+
     def test_rates_are_exact_decimals(self):
         rows = load_price_table(FIXTURE, TODAY)
         self.assertEqual(rows[2].input_per_mtok, Decimal("0.1"))
