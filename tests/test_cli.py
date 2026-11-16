@@ -28,6 +28,7 @@ import contextlib
 import io
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -500,6 +501,42 @@ class SeedPrices(unittest.TestCase):
         self.assertIn("google / gemini-3.8-flash: now", out)
 
 
+class ReadmeExample(unittest.TestCase):
+    """Review 5, finding 1: the command shown in the README must run, and its quoted output must be real.
+
+    The example is the first fenced block in README.md whose first line starts with "$ aicost". Its
+    file name seed_usage.csv is read from tests/fixtures. The block is trimmed, so each quoted line
+    only has to appear in the real output, in the same order, not be the whole output. If the seed
+    rows' as_of date moves past the example's --today date, the command fails and so does this test.
+    """
+
+    README = Path(__file__).resolve().parents[1] / "README.md"
+
+    def example(self):
+        lines = self.README.read_text(encoding="utf-8").splitlines()
+        start = next(
+            (i for i, line in enumerate(lines) if line.startswith("```") and i + 1 < len(lines)
+             and lines[i + 1].startswith("$ aicost ")),
+            None,
+        )
+        self.assertIsNotNone(start, "no fenced block starting with '$ aicost ' in README.md")
+        end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith("```"))
+        return lines[start + 1], [line.rstrip() for line in lines[start + 2 : end] if line.strip()]
+
+    def test_the_command_runs_and_every_quoted_line_is_in_the_real_output_in_order(self):
+        command, quoted = self.example()
+        argv = shlex.split(command[2:])
+        self.assertEqual(argv[0], "aicost")
+        argv = [str(SEED_USAGE) if Path(arg).name == "seed_usage.csv" else arg for arg in argv[1:]]
+        self.assertIn(str(SEED_USAGE), argv, "the README example does not name seed_usage.csv")
+        self.assertTrue(quoted, "the README example quotes no output")
+        code, out, err = run(*argv)
+        self.assertEqual((code, err), (0, ""))
+        real = iter(line.rstrip() for line in out.splitlines())
+        for line in quoted:
+            self.assertTrue(any(line == candidate for candidate in real), f"not in the output, in order: {line!r}")
+
+
 class DefaultPrices(unittest.TestCase):
     """Without --prices the seed table bundled in the package is used, from any folder."""
 
@@ -608,6 +645,23 @@ class FileProblemsAreReportedNotRaised(unittest.TestCase):
             usage = write(directory, "u.csv", "model,input_tokens,output_tokens\nm,1000,1\n")
             code, out, err = run("report", usage, "--prices", prices, "--today", TODAY)
         self.check(code, out, err, "input_per_mtok must be at most 1,000,000")
+
+    def test_an_exponent_too_large_to_read(self):
+        # Review 5, finding 2: Decimal raises InvalidOperation, which is not a ValueError.
+        usage_text = "model,input_tokens,output_tokens\nm,1000,1\n"
+        for value in ("1e1000000000000000000000", "1e-1000000000000000000000"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                prices = write(directory, "p.toml", price_table(input_rate=value))
+                usage = write(directory, "u.csv", usage_text)
+                code, out, err = run("report", usage, "--prices", prices, "--today", SEED_TODAY)
+                self.check(code, out, err, "a value could not be read")
+
+    def test_a_large_but_legal_exponent_is_still_a_rate_problem(self):
+        with tempfile.TemporaryDirectory() as directory:
+            prices = write(directory, "p.toml", price_table(input_rate="1e999999999999999999"))
+            usage = write(directory, "u.csv", "model,input_tokens,output_tokens\nm,1000,1\n")
+            code, out, err = run("report", usage, "--prices", prices, "--today", SEED_TODAY)
+        self.check(code, out, err, "input_per_mtok must be at most 1,000,000 dollars per million tokens")
 
     def test_the_largest_allowed_rate_and_count_price_without_overflow(self):
         with tempfile.TemporaryDirectory() as directory:

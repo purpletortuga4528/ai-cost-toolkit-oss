@@ -23,6 +23,12 @@ def parse_price_table(text: str, today: datetime.date | None = None) -> tuple[Pr
         raise PriceTableError(
             ["not valid TOML: a value could not be read (for example, an integer of more than 4,300 digits)"]
         ) from error
+    except ArithmeticError as error:
+        # decimal.InvalidOperation (an ArithmeticError, not a ValueError): Decimal refuses an exponent
+        # beyond its limits, for example 1e1000000000000000000000, and tomllib lets that escape.
+        raise PriceTableError(
+            ["not valid TOML: a value could not be read (for example, a number whose exponent is too large)"]
+        ) from error
     except RecursionError as error:
         raise PriceTableError(["not valid TOML: nested too deeply to read"]) from error
 
