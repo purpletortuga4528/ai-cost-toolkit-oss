@@ -1,6 +1,6 @@
 # AI Cost Toolkit
 
-A command-line tool that reads your own API usage export and shows what share of your spend sits above each provider's long-context price threshold, which of your models have a scheduled price change, and what the same usage would cost on a future date. Version 0.1.0 (in development, not yet released).
+A command-line tool that reads your own API usage export and shows what share of your spend sits above each provider's long-context price threshold, which of your models have a scheduled price change, and what the same usage would cost on a future date. Version 0.1.0 is tagged as v0.1.0; the main branch may be ahead of it.
 
 The `web/` folder holds a self-host versus API cost calculator planned for a later release. It is work in progress: it is not part of version 0.1.0, it has not been released, and it has not been tested with a screen reader.
 
